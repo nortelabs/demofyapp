@@ -12,6 +12,7 @@ class ViewModel: ObservableObject {
     @Published var processingError: String?
     @Published var isFFmpegInstalled = false
 
+    private var ffmpegPath: String?
     private var recordingProcess: Process?
     private var processingProcess: Process?
 
@@ -39,9 +40,21 @@ class ViewModel: ObservableObject {
     func stopRecording() {
         recordingProcess?.interrupt() // Sends SIGINT to stop the recording gracefully
         isRecording = false
+        checkForFFmpeg()
     }
 
     func checkForFFmpeg() {
+        // 1. Check common Homebrew paths first for efficiency
+        let possiblePaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
+        for path in possiblePaths {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                self.ffmpegPath = path
+                self.isFFmpegInstalled = true
+                return
+            }
+        }
+
+        // 2. If not found, fall back to using the `which` command
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
         process.arguments = ["ffmpeg"]
@@ -54,15 +67,18 @@ class ViewModel: ObservableObject {
             process.waitUntilExit()
 
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let path = String(data: data, encoding: .utf8), !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                isFFmpegInstalled = true
+            let foundPath = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if let path = foundPath, !path.isEmpty {
+                self.ffmpegPath = path
+                self.isFFmpegInstalled = true
             } else {
-                isFFmpegInstalled = false
-                processingError = "FFmpeg not found. Please install it to use video processing features."
+                self.isFFmpegInstalled = false
+                self.processingError = "FFmpeg not found. Please install it to use video processing features."
             }
         } catch {
-            isFFmpegInstalled = false
-            processingError = "Error checking for FFmpeg: \(error.localizedDescription)"
+            self.isFFmpegInstalled = false
+            self.processingError = "Error checking for FFmpeg: \(error.localizedDescription)"
         }
     }
 
@@ -88,7 +104,12 @@ class ViewModel: ObservableObject {
         let outputURL = documentsPath.appendingPathComponent("demofy_processed_\(UUID().uuidString).mp4")
 
         processingProcess = Process()
-        processingProcess?.executableURL = URL(fileURLWithPath: "/usr/local/bin/ffmpeg") // Common path, but might need to be more robust
+        guard let ffmpegPath = self.ffmpegPath else {
+            processingError = "Could not determine path to FFmpeg."
+            return
+        }
+
+        processingProcess?.executableURL = URL(fileURLWithPath: ffmpegPath)
         processingProcess?.arguments = [
             "-i", video.path,
             "-i", frame.path,
