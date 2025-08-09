@@ -7,7 +7,8 @@ class ViewModel: ObservableObject {
     @Published var isRecording = false
         @Published var videoURL: URL?
     @Published var droppedVideoURL: URL?
-    @Published var droppedFrameURL: URL?
+    @Published var availableFrames: [URL] = []
+    @Published var selectedFrameURL: URL?
     @Published var processedVideoURL: URL?
     @Published var isProcessing = false
     @Published var processingError: String?
@@ -16,6 +17,10 @@ class ViewModel: ObservableObject {
     private var ffmpegPath: String?
     private var recordingProcess: Process?
     private var processingProcess: Process?
+
+    init() {
+        loadFrames()
+    }
 
     func startRecording(at url: URL) {
         isRecording = true
@@ -96,9 +101,24 @@ class ViewModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    func loadFrames() {
+        guard let framesURL = Bundle.main.url(forResource: "Frames", withExtension: nil) else {
+            print("Frames directory not found in bundle. Make sure it's added to the project as a folder reference (blue folder).")
+            return
+        }
+
+        do {
+            let frameURLs = try FileManager.default.contentsOfDirectory(at: framesURL, includingPropertiesForKeys: nil)
+            self.availableFrames = frameURLs.filter { $0.pathExtension.lowercased() == "png" }
+            self.selectedFrameURL = self.availableFrames.first
+        } catch {
+            print("Error loading frames: \(error)")
+        }
+    }
+
     func processVideo() {
-        guard let video = droppedVideoURL, let frame = droppedFrameURL else {
-            processingError = "Please drop both a video file and a frame image."
+        guard let video = droppedVideoURL, let frame = selectedFrameURL else {
+            processingError = "Please drop a video file and select a frame."
             return
         }
 

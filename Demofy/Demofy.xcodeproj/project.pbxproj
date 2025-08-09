@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		98F769CF2E46F6BA005E7AFF /* Frames in Resources */ = {isa = PBXBuildFile; fileRef = 98F769CE2E46F6BA005E7AFF /* Frames */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		9839951E2E42DF880019D005 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		9839950F2E42DF870019D005 /* Demofy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Demofy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9839951D2E42DF880019D005 /* DemofyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DemofyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		983995272E42DF880019D005 /* DemofyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DemofyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		98F769CE2E46F6BA005E7AFF /* Frames */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Frames; path = Demofy/Frames; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +80,7 @@
 		983995062E42DF870019D005 = {
 			isa = PBXGroup;
 			children = (
+				98F769CE2E46F6BA005E7AFF /* Frames */,
 				983995112E42DF870019D005 /* Demofy */,
 				983995202E42DF880019D005 /* DemofyTests */,
 				9839952A2E42DF880019D005 /* DemofyUITests */,
@@ -212,6 +218,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				98F769CF2E46F6BA005E7AFF /* Frames in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -395,6 +402,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Demofy/Demofy.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -422,6 +430,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Demofy/Demofy.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
