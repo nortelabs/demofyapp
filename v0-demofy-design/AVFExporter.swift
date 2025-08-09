@@ -1,0 +1,135 @@
+import Foundation
+import AVFoundation
+import AppKit
+
+struct DemofyConfig: Codable {
+    struct Canvas: Codable { let width: Int; let height: Int }
+    struct Trim: Codable { let start: Double; let end: Double }
+    struct Offset: Codable { let x: Double; let y: Double } // -1..1 of half-screen
+    let outputFormat: String // "mp4" or "mov"
+    let canvas: Canvas
+    let trim: Trim
+    let screenRect: ScreenRect // 0..100 percent
+    let scale: Double          // 1.0 = fit, >1 zoom in
+    let offset: Offset
+}
+
+final class AVFExporter {
+    enum ExportError: Error { case cannotLoadAsset, exportFailed }
+
+    func export(
+        inputURL: URL,
+        frameImageURL: URL?,
+        config: DemofyConfig,
+        outputURL: URL,
+        completion: @escaping (Result<URL, Error>) -> Void
+    ) {
+        let asset = AVURLAsset(url: inputURL)
+        guard let track = asset.tracks(withMediaType: .video).first else {
+            completion(.failure(ExportError.cannotLoadAsset)); return
+        }
+
+        let composition = AVMutableComposition()
+        guard let compVideo = composition
+            .addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            completion(.failure(ExportError.cannotLoadAsset)); return
+        }
+
+        // Trim
+        let start = CMTime(seconds: config.trim.start, preferredTimescale: 600)
+        let end = CMTime(seconds: config.trim.end, preferredTimescale: 600)
+        let range = CMTimeRange(start: start, end: end)
+        try? compVideo.insertTimeRange(range, of: track, at: .zero)
+
+        // Audio passthrough if available
+        if let audioTrack = asset.tracks(withMediaType: .audio).first,
+           let compAudio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            try? compAudio.insertTimeRange(range, of: audioTrack, at: .zero)
+        }
+
+        // Render size
+        let renderSize = CGSize(width: config.canvas.width, height: config.canvas.height)
+
+        // Screen rect in output coordinates (convert 0..100 to 0..1 and multiply)
+        let screen = CGRect(
+            x: (config.screenRect.x / 100.0) * renderSize.width,
+            y: (config.screenRect.y / 100.0) * renderSize.height,
+            width: (config.screenRect.w / 100.0) * renderSize.width,
+            height: (config.screenRect.h / 100.0) * renderSize.height
+        )
+
+        // Source natural size
+        let nat = track.naturalSize.applying(track.preferredTransform)
+        let srcSize = CGSize(width: abs(nat.width), height: abs(nat.height))
+
+        // Scale to cover screen rect (object-fit: cover), then apply extra zoom and offsets
+        let baseScale = max(screen.width / srcSize.width, screen.height / srcSize.height)
+        let extraScale = CGFloat(max(0.1, config.scale))
+        let finalScale = baseScale * extraScale
+
+        let scaledSize = CGSize(width: srcSize.width * finalScale, height: srcSize.height * finalScale)
+
+        // Offsets in -1..1 of half-screen dimension
+        let ox = CGFloat(config.offset.x) * (screen.width / 2.0)
+        let oy = CGFloat(config.offset.y) * (screen.height / 2.0)
+
+        // Position so video center aligns to screen center then offset
+        let tx = screen.midX - scaledSize.width / 2.0 + ox
+        let ty = screen.midY - scaledSize.height / 2.0 + oy
+
+        // Build video composition instruction
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compVideo)
+        var t = track.preferredTransform
+        t = t.concatenating(CGAffineTransform(scaleX: finalScale, y: finalScale))
+        t = t.concatenating(CGAffineTransform(translationX: tx, y: ty))
+        layerInstruction.setTransform(t, at: .zero)
+        instruction.layerInstructions = [layerInstruction]
+
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.instructions = [instruction]
+        videoComposition.renderSize = renderSize
+        let fps = track.nominalFrameRate == 0 ? 30 : track.nominalFrameRate
+        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
+
+        // Core Animation overlay
+        let parentLayer = CALayer()
+        let videoLayer = CALayer()
+        let overlayLayer = CALayer()
+        parentLayer.frame = CGRect(origin: .zero, size: renderSize)
+        videoLayer.frame = parentLayer.bounds
+        overlayLayer.frame = parentLayer.bounds
+        overlayLayer.contentsGravity = .resizeAspect
+        overlayLayer.masksToBounds = false
+
+        if let imgURL = frameImageURL, let nsImage = NSImage(contentsOf: imgURL) {
+            overlayLayer.contents = nsImage
+            overlayLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+        }
+
+        parentLayer.addSublayer(videoLayer)
+        parentLayer.addSublayer(overlayLayer)
+        videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
+            postProcessingAsVideoLayer: videoLayer,
+            in: parentLayer
+        )
+
+        // Export
+        try? FileManager.default.removeItem(at: outputURL)
+        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+            completion(.failure(ExportError.exportFailed)); return
+        }
+        session.outputURL = outputURL
+        session.outputFileType = (config.outputFormat.lowercased() == "mov") ? .mov : .mp4
+        session.videoComposition = videoComposition
+        session.exportAsynchronously {
+            switch session.status {
+            case .completed: completion(.success(outputURL))
+            case .failed, .cancelled: completion(.failure(session.error ?? ExportError.exportFailed))
+            default: break
+            }
+        }
+    }
+}

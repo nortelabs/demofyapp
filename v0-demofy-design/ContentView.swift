@@ -2,7 +2,6 @@ import SwiftUI
 import AVFoundation
 import AVKit
 import AppKit
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     // State
@@ -41,7 +40,7 @@ struct ContentView: View {
                 // Preview
                 GroupBox("Preview") {
                     GeometryReader { geo in
-                        let aspect = stageAspectRatio
+                        let aspect = stageAspect() // frame or video-based
                         ZStack {
                             Color(NSColor.windowBackgroundColor)
                             VideoFramePreview(
@@ -65,15 +64,13 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Start \(formatTime(trimStart))")
-                            let upperBound = max(1, duration - 0.1)
-                            Slider(value: $trimStart, in: 0...upperBound, step: 1) { _ in
+                            Slider(value: $trimStart, in: 0...max(0, duration - 0.1), step: 1) { _ in
                                 trimStart = min(trimStart, trimEnd)
                             }
                         }
                         HStack {
                             Text("End \(formatTime(trimEnd))")
-                            let endUpperBound = max(1, duration)
-                            Slider(value: $trimEnd, in: 0...endUpperBound, step: 1) { _ in
+                            Slider(value: $trimEnd, in: 0...duration, step: 1) { _ in
                                 trimEnd = max(trimEnd, trimStart)
                             }
                         }
@@ -127,7 +124,7 @@ struct ContentView: View {
                                 Text(path).lineLimit(1).truncationMode(.middle)
                                 Spacer()
                                 Button("Import") {
-                                    Task { await loadVideo(from: recordingURL) }
+                                    loadVideo(from: recordingURL)
                                 }
                             }
                             .font(.caption)
@@ -140,17 +137,16 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Button {
-                                if let url = askOpenURL(allowed: [.movie]) {
-                                    Task { await loadVideo(from: url) }
+                                if let url = askOpenURL(allowed: ["mp4", "mov", "m4v"]) {
+                                    loadVideo(from: url)
                                 }
                             } label: { Label("Import Video", systemImage: "square.and.arrow.down") }
 
                             Button {
-                                if let url = askOpenURL(allowed: [.png]) {
+                                if let url = askOpenURL(allowed: ["png"]) {
                                     frameImageURL = url
                                     frameImage = NSImage(contentsOf: url)
                                     framePreset = .custom
-                                    Task { await updateStageAspect() }
                                 }
                             } label: { Label("Upload Frame PNG", systemImage: "photo") }
                         }
@@ -160,13 +156,12 @@ struct ContentView: View {
                                 Text(p.label).tag(p.key)
                             }
                         }
-                        .onChange(of: framePreset) { _, new in
+                        .onChange(of: framePreset) { new in
                             let p = framePresets.first { $0.key == new }!
                             screenRect = p.defaultScreen
                             if let name = p.bundleImageName, let url = Bundle.main.url(forResource: name, withExtension: "png") {
                                 frameImageURL = url
                                 frameImage = NSImage(contentsOf: url)
-                                Task { await updateStageAspect() }
                             } else if new == .custom {
                                 // keep current custom image
                             }
@@ -216,16 +211,16 @@ struct ContentView: View {
                             .pickerStyle(.segmented)
                             Spacer()
                             Text("Canvas")
-                            TextField("Width", value: $canvas.widthInt, formatter: NumberFormatter())
+                            TextField("Width", value: $canvas.width, formatter: NumberFormatter())
                                 .frame(width: 70)
                             Text("×")
-                            TextField("Height", value: $canvas.heightInt, formatter: NumberFormatter())
+                            TextField("Height", value: $canvas.height, formatter: NumberFormatter())
                                 .frame(width: 70)
                         }
 
                         HStack(spacing: 12) {
                             Button {
-                                Task { await exportWithAVFoundation() }
+                                exportWithAVFoundation()
                             } label: { Label("Export (AVFoundation)", systemImage: "arrow.down.doc") }
                             .disabled(videoURL == nil)
                             if exporting { ProgressView().controlSize(.small) }
@@ -272,55 +267,34 @@ struct ContentView: View {
 
     // MARK: - Helpers
 
-    @State private var stageAspectRatio: CGFloat = 9/19.5
-
-    private func updateStageAspect() async {
-        if let img = frameImage {
-            stageAspectRatio = img.size.width / img.size.height
-            return
-        }
-        if let player, let asset = player.currentItem?.asset {
-            do {
-                guard let track = try await asset.loadTracks(withMediaType: .video).first else {
-                    stageAspectRatio = 9/19.5
-                    return
-                }
-                let (naturalSize, transform) = try await track.load(.naturalSize, .preferredTransform)
-                let sz = naturalSize.applying(transform)
-                if sz.height > 0 {
-                    stageAspectRatio = abs(sz.width / sz.height)
-                } else {
-                    stageAspectRatio = 9/19.5
-                }
-            } catch {
-                print("Could not load video properties for aspect ratio: \(error)")
-                stageAspectRatio = 9/19.5
+    private func stageAspect() -> CGFloat {
+        if let img = frameImage { return img.size.width / img.size.height }
+        if let url = videoURL {
+            let asset = AVURLAsset(url: url)
+            if let track = asset.tracks(withMediaType: .video).first {
+                let nat = track.naturalSize.applying(track.preferredTransform)
+                let sz = CGSize(width: abs(nat.width), height: abs(nat.height))
+                if sz.height > 0 { return sz.width / sz.height }
             }
-        } else {
-            stageAspectRatio = 9/19.5
         }
+        return 9/19.5
     }
 
-    private func loadVideo(from url: URL?) async {
+    private func loadVideo(from url: URL?) {
         guard let url else { return }
         videoURL = url
         let asset = AVURLAsset(url: url)
-        do {
-            let newDuration = try await asset.load(.duration).seconds
-            duration = newDuration.isFinite ? newDuration : 0
-            trimStart = 0
-            trimEnd = duration
-            let item = AVPlayerItem(asset: asset)
-            player = AVPlayer(playerItem: item)
-        Task { await updateStageAspect() }
-        } catch {
-            print("Failed to load video duration: \(error)")
-        }
+        let secs = CMTimeGetSeconds(asset.duration)
+        duration = secs.isFinite ? secs : 0
+        trimStart = 0
+        trimEnd = duration
+        let item = AVPlayerItem(asset: asset)
+        player = AVPlayer(playerItem: item)
     }
 
-    private func askOpenURL(allowed: [UTType]) -> URL? {
+    private func askOpenURL(allowed: [String]) -> URL? {
         let p = NSOpenPanel()
-        p.allowedContentTypes = allowed
+        p.allowedFileTypes = allowed
         p.allowsMultipleSelection = false
         p.canChooseDirectories = false
         return p.runModal() == .OK ? p.url : nil
@@ -332,38 +306,43 @@ struct ContentView: View {
         return p.runModal() == .OK ? p.url : nil
     }
 
-    private func exportWithAVFoundation() async {
+    private func exportWithAVFoundation() {
         guard let input = videoURL else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "demofy-output.\(outputFormat.rawValue)"
-        guard panel.runModal() == .OK, let out = panel.url else { return }
-        
-        let cfg = DemofyConfig(
-            outputFormat: outputFormat.rawValue,
-            canvas: .init(width: Int(canvas.width), height: Int(canvas.height)),
-            trim: .init(start: trimStart, end: trimEnd),
-            screenRect: screenRect,
-            scale: scale / 100.0,
-            offset: .init(x: offsetX / 100.0, y: offsetY / 100.0)
-        )
-        var frameURL: URL?
-        if let u = frameImageURL {
-            frameURL = u
-        } else if let preset = framePresets.first(where: { $0.key == framePreset }),
-                  let name = preset.bundleImageName,
-                  let bURL = Bundle.main.url(forResource: name, withExtension: "png") {
-            frameURL = bURL
-        }
+        panel.begin { resp in
+            guard resp == .OK, let out = panel.url else { return }
+            let cfg = DemofyConfig(
+                outputFormat: outputFormat.rawValue,
+                canvas: .init(width: Int(canvas.width), height: Int(canvas.height)),
+                trim: .init(start: trimStart, end: trimEnd),
+                screenRect: screenRect,
+                scale: scale / 100.0,
+                offset: .init(x: offsetX / 100.0, y: offsetY / 100.0)
+            )
+            var frameURL: URL?
+            if let u = frameImageURL {
+                frameURL = u
+            } else if let preset = framePresets.first(where: { $0.key == framePreset }),
+                      let name = preset.bundleImageName,
+                      let bURL = Bundle.main.url(forResource: name, withExtension: "png") {
+                frameURL = bURL
+            }
 
-        exporting = true
-        exportProgressText = "Exporting…"
-        do {
-            let resultURL = try await exporter.export(inputURL: input, frameImageURL: frameURL, config: cfg, outputURL: out)
-            exportProgressText = "Saved to \(resultURL.path)"
-        } catch {
-            exportProgressText = "Failed: \(error.localizedDescription)"
+            exporting = true
+            exportProgressText = "Exporting…"
+            exporter.export(inputURL: input, frameImageURL: frameURL, config: cfg, outputURL: out) { result in
+                DispatchQueue.main.async {
+                    exporting = false
+                    switch result {
+                    case .success(let url):
+                        exportProgressText = "Saved to \(url.path)"
+                    case .failure(let error):
+                        exportProgressText = "Failed: \(error.localizedDescription)"
+                    }
+                }
+            }
         }
-        exporting = false
     }
 
     // Create an FFmpeg command string similar to the web prototype for parity
@@ -407,12 +386,12 @@ struct ContentView: View {
 }
 
 private extension CGSize {
-    var widthInt: Int {
+    var width: Int {
         get { Int(self.width.rounded()) }
-        set { self.width = CGFloat(newValue) }
+        set { self = CGSize(width: CGFloat(newValue), height: self.height) }
     }
-    var heightInt: Int {
+    var height: Int {
         get { Int(self.height.rounded()) }
-        set { self.height = CGFloat(newValue) }
+        set { self = CGSize(width: self.width, height: CGFloat(newValue)) }
     }
 }
