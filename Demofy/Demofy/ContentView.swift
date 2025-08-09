@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AspectFillVideoPlayer
 
 struct ContentView: View {
     @StateObject private var viewModel = ViewModel()
@@ -128,9 +129,8 @@ struct ContentView: View {
                         .buttonStyle(BorderlessButtonStyle())
                         .padding(.top, 8)
                     }
-                    VideoPlayer(player: AVPlayer(url: viewModel.processedVideoURL ?? URL(fileURLWithPath: "/dev/null")))
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity)
+                    AspectFillVideoPlayer(player: AVPlayer(url: viewModel.processedVideoURL ?? URL(fileURLWithPath: "/dev/null")))
+                        .frame(maxWidth: .infinity, minHeight: 320, maxHeight: 600)
                         .background(Color.black.opacity(0.85))
                         .cornerRadius(18)
                         .shadow(radius: 8)
