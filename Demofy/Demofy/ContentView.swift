@@ -33,7 +33,10 @@ struct ContentView: View {
                 }
 
                 Button(action: {
-                    viewModel.processVideo()
+                    viewModel.showSavePanelForProcessedVideo { outputURL in
+                        guard let url = outputURL else { return }
+                        viewModel.processVideo(outputURL: url)
+                    }
                 }) {
                     HStack {
                         Image(systemName: "scissors")
@@ -75,14 +78,59 @@ struct ContentView: View {
                     .padding(.bottom, 8)
             }
 
-            // Video Preview Section
-            if let processedURL = viewModel.processedVideoURL {
+            ZStack {
+                // Input View
+                VStack {
+                    HStack(alignment: .top, spacing: 32) {
+                        DropZone(title: "Drop Video File", url: $viewModel.droppedVideoURL)
+
+                        VStack {
+                            Text("Select Frame")
+                                .font(.headline)
+                            Picker("Select a frame", selection: $viewModel.selectedFrameURL) {
+                                ForEach(viewModel.availableFrames, id: \.self) { frameURL in
+                                    Text(frameURL.deletingPathExtension().lastPathComponent)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .tag(frameURL as URL?)
+                                }
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(width: 320)
+                            .padding(.vertical, 6)
+                            .background(Color(NSColor.windowBackgroundColor))
+                            .cornerRadius(8)
+                        }
+                        .padding()
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(10)
+                    }
+                    .padding()
+                    Spacer()
+                }
+                .opacity(viewModel.processedVideoURL == nil ? 1 : 0)
+                .disabled(viewModel.processedVideoURL != nil)
+
+                // Video Preview
                 VStack(spacing: 8) {
-                    Text("Processed Video Preview")
-                        .font(.headline)
-                        .padding(.top, 12)
-                    VideoPlayer(player: AVPlayer(url: processedURL))
-                        .frame(height: 340)
+                    HStack(alignment: .center, spacing: 16) {
+                        Text("Processed Video Preview")
+                            .font(.headline)
+                            .padding(.top, 12)
+                        Spacer()
+                        Button(action: { viewModel.reset() }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Start Over")
+                            }
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
+                        .padding(.top, 8)
+                    }
+                    VideoPlayer(player: AVPlayer(url: viewModel.processedVideoURL ?? URL(fileURLWithPath: "/dev/null")))
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
                         .background(Color.black.opacity(0.85))
                         .cornerRadius(18)
                         .shadow(radius: 8)
@@ -91,41 +139,15 @@ struct ContentView: View {
                                 .stroke(Color.accentColor.opacity(0.2), lineWidth: 2)
                         )
                         .padding(.horizontal, 24)
-                    Text(processedURL.lastPathComponent)
+                    Text(viewModel.processedVideoURL?.lastPathComponent ?? "")
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.bottom, 32)
+                .opacity(viewModel.processedVideoURL != nil ? 1 : 0)
+                .disabled(viewModel.processedVideoURL == nil)
             }
-
-            // Selection Section
-            HStack(alignment: .top, spacing: 32) {
-                DropZone(title: "Drop Video File", url: $viewModel.droppedVideoURL)
-
-                VStack {
-                    Text("Select Frame")
-                        .font(.headline)
-                    Picker("Select a frame", selection: $viewModel.selectedFrameURL) {
-                        ForEach(viewModel.availableFrames, id: \.self) { frameURL in
-                            Text(frameURL.deletingPathExtension().lastPathComponent)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .tag(frameURL as URL?)
-                        }
-                    }
-                    .pickerStyle(MenuPickerStyle())
-                    .frame(width: 320)
-                    .padding(.vertical, 6)
-                    .background(Color(NSColor.windowBackgroundColor))
-                    .cornerRadius(8)
-                }
-                .padding()
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(10)
-            }
-            .padding()
-
-            Spacer()
         }
         .frame(minWidth: 600, minHeight: 400)
         .padding()

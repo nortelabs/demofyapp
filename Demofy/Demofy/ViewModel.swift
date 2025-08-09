@@ -116,7 +116,7 @@ class ViewModel: ObservableObject {
         }
     }
 
-    func processVideo() {
+    func processVideo(outputURL: URL) {
         guard let video = droppedVideoURL, let frame = selectedFrameURL else {
             processingError = "Please drop a video file and select a frame."
             return
@@ -129,9 +129,6 @@ class ViewModel: ObservableObject {
 
         isProcessing = true
         processingError = nil
-
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let outputURL = documentsPath.appendingPathComponent("demofy_processed_\(UUID().uuidString).mp4")
 
         processingProcess = Process()
         guard let ffmpegPath = self.ffmpegPath else {
@@ -167,5 +164,28 @@ class ViewModel: ObservableObject {
             isProcessing = false
             self.processingError = "Error running FFmpeg: \(error.localizedDescription)"
         }
+    }
+
+    func showSavePanelForProcessedVideo(completion: @escaping (URL?) -> Void) {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [UTType.mpeg4Movie]
+        savePanel.nameFieldStringValue = "demofy_processed.mp4"
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                completion(url)
+            } else {
+                completion(nil)
+            }
+        }
+    }
+
+    func reset() {
+        isRecording = false
+        videoURL = nil
+        droppedVideoURL = nil
+        processedVideoURL = nil
+        isProcessing = false
+        processingError = nil
+        // Optionally, keep selectedFrameURL if you want the frame to persist between runs
     }
 }
