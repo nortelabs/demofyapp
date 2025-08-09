@@ -15,11 +15,17 @@ struct ContentView: View {
                     if viewModel.isRecording {
                         viewModel.stopRecording()
                     } else {
-                        viewModel.startRecording()
+                        viewModel.showSavePanelAndStartRecording()
                     }
                 }) {
-                    Text(viewModel.isRecording ? "Stop Recording" : "Record Simulator")
-                        .frame(width: 150)
+                    HStack {
+                        if viewModel.isRecording {
+                            Image(systemName: "record.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                        Text(viewModel.isRecording ? "Stop Recording" : "Record Simulator")
+                    }
+                    .frame(width: 150)
                 }
 
                 Button(action: {

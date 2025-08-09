@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import UniformTypeIdentifiers
 
 class ViewModel: ObservableObject {
     @Published var isRecording = false
@@ -16,24 +17,33 @@ class ViewModel: ObservableObject {
     private var recordingProcess: Process?
     private var processingProcess: Process?
 
-    func startRecording() {
+    func startRecording(at url: URL) {
         isRecording = true
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let fileName = "demofy_\(dateFormatter.string(from: Date())).mp4"
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let videoURL = documentsPath.appendingPathComponent(fileName)
-        self.videoURL = videoURL
+        self.videoURL = url
 
         recordingProcess = Process()
         recordingProcess?.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        recordingProcess?.arguments = ["simctl", "io", "booted", "recordVideo", "--codec=h264", videoURL.path]
+        recordingProcess?.arguments = ["simctl", "io", "booted", "recordVideo", "--codec=h264", url.path]
 
         do {
             try recordingProcess?.run()
         } catch {
             print("Error starting recording: \(error)")
             isRecording = false
+        }
+    }
+
+    func showSavePanelAndStartRecording() {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [UTType.mpeg4Movie]
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        savePanel.nameFieldStringValue = "demofy_\(dateFormatter.string(from: Date())).mp4"
+
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                self.startRecording(at: url)
+            }
         }
     }
 
