@@ -1,6 +1,5 @@
 import SwiftUI
 import AVKit
-import AspectFillVideoPlayer
 
 struct ContentView: View {
     @StateObject private var viewModel = ViewModel()
