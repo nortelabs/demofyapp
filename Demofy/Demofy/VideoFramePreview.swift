@@ -74,27 +74,30 @@ struct VideoFramePreview: NSViewRepresentable {
         let sh = CGFloat(screen.h / 100.0) * bounds.height
         let screenRect = CGRect(x: sx, y: sy, width: sw, height: sh)
 
-        // Place player layer to fill the screen rect; apply extra zoom and offsets by transform
+        // Set player layer to fill the screen rect
         v.playerLayer.frame = screenRect
 
-        // Extra zoom
+        // Calculate zoom level (inverse because we want to scale the content, not the container)
         let zoom = max(0.1, scale / 100.0)
-        // Offsets relative to half of screen size
-        let dx = CGFloat(offsetX / 100.0) * (screenRect.width / 2.0)
-        let dy = CGFloat(offsetY / 100.0) * (screenRect.height / 2.0)
-
-        // Build transform: translate then scale around center
-        // Move anchor to center of screen rect coordinates
+        
+        // Calculate offsets relative to screen size
+        let dx = (offsetX / 100.0) * (screenRect.width / 2.0)
+        let dy = (offsetY / 100.0) * (screenRect.height / 2.0)
+        
+        // Apply transform to position and scale the video within the screen rect
+        // Center the video within the screen rect
         v.playerLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         v.playerLayer.position = CGPoint(x: screenRect.midX, y: screenRect.midY)
-
-        var t = CATransform3DIdentity
-        t = CATransform3DTranslate(t, dx, dy, 0)
-        t = CATransform3DScale(t, zoom, zoom, 1)
-        v.playerLayer.transform = t
-        v.playerLayer.videoGravity = .resizeAspectFill
+        v.playerLayer.videoGravity = .resizeAspect
         v.playerLayer.masksToBounds = true
-        // Approx rounded screen; tweak as needed
+        
+        // Apply transform for zoom and offset
+        var t = CATransform3DIdentity
+        t = CATransform3DTranslate(t, dx, -dy, 0) // Invert dy to match coordinate system
+        t = CATransform3DScale(t, 1/zoom, 1/zoom, 1) // Invert zoom to scale content, not container
+        v.playerLayer.transform = t
+        
+        // Rounded corners for the screen
         v.playerLayer.cornerRadius = min(screenRect.width, screenRect.height) * 0.028
 
         // Guides

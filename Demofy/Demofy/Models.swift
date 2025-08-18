@@ -36,13 +36,13 @@ let framePresets: [FramePreset] = [
     FramePreset(
         key: .iphone16proBlack,
         label: "iPhone 16 Pro — Black",
-        bundleImageName: "iphone-16-pro-black", // add iphone-16-pro-black.png to your bundle
+        bundleImageName: "Frames/iphone16problack",
         defaultScreen: .init(x: 7.2, y: 5.8, w: 85.6, h: 88.4)
     ),
     FramePreset(
         key: .iphone16plusBlack,
         label: "iPhone 16 Plus — Black",
-        bundleImageName: "iphone-16-plus-black", // add iphone-16-plus-black.png
+        bundleImageName: "Frames/iphone16plusframeblack",
         defaultScreen: .init(x: 6.8, y: 5.6, w: 86.5, h: 89.0)
     ),
     FramePreset(

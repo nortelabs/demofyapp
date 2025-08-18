@@ -127,7 +127,10 @@ struct ContentView: View {
                                 Text(path).lineLimit(1).truncationMode(.middle)
                                 Spacer()
                                 Button("Import") {
-                                    Task { await loadVideo(from: recordingURL) }
+                                    if let url = recordingURL {
+                                        videoURL = url
+                                        Task { await loadVideo(from: url) }
+                                    }
                                 }
                             }
                             .font(.caption)
