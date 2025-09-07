@@ -1,44 +1,52 @@
 import SwiftUI
 
-// MARK: - Color Extensions
+// MARK: - Clean Color Palette
 extension Color {
+    // Coolors palette: https://coolors.co/db7536-ffcc00-000000-ffffff
+    static let brandOrange = Color(red: 0.859, green: 0.459, blue: 0.212) // #DB7536
+    static let brandYellow = Color(red: 1.0, green: 0.8, blue: 0.0)       // #FFCC00
+    static let brandBlack = Color(red: 0.0, green: 0.0, blue: 0.0)        // #000000
+    static let brandWhite = Color(red: 1.0, green: 1.0, blue: 1.0)        // #FFFFFF
+    
+    // Semantic colors using the clean palette
+    static let primaryBrand = brandOrange
+    static let secondaryBrand = brandYellow
+    static let accentBrand = brandYellow
+    
+    // System colors
     static let background = Color(NSColor.controlBackgroundColor)
     static let cardBackground = Color(NSColor.controlBackgroundColor)
-    static let accent = Color.accentColor
+    static let accent = primaryBrand
     static let secondaryText = Color.secondary
     static let border = Color(NSColor.separatorColor)
     static let success = Color.green
-    static let warning = Color.orange
+    static let warning = brandYellow
     static let destructive = Color.red
-    
-    // Modern gradient colors
-    static let primaryGradient = LinearGradient(
-        colors: [Color.accent, Color.accent.opacity(0.8)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    
-    static let cardGradient = LinearGradient(
-        colors: [Color(.systemGray6), Color(.systemGray5)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
 }
 
 // MARK: - Custom View Modifiers
 struct CardStyle: ViewModifier {
     let padding: CGFloat
+    let useGradient: Bool
     
-    init(padding: CGFloat = 16) {
+    init(padding: CGFloat = 20, useGradient: Bool = false) {
         self.padding = padding
+        self.useGradient = useGradient
     }
     
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(Color.cardBackground)
-            .cornerRadius(10)
-            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.regularMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.primaryBrand.opacity(0.2), lineWidth: 1)
+                    )
+            )
+            .shadow(color: Color.primaryBrand.opacity(0.1), radius: 8, x: 0, y: 4)
+            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
 }
 
@@ -61,31 +69,34 @@ struct ModernButtonStyle: ButtonStyle {
     let size: Size
     
     enum Variant {
-        case primary, secondary, destructive, ghost
+        case primary, secondary, destructive, ghost, accent
         
         var backgroundColor: Color {
             switch self {
-            case .primary: return .accent
+            case .primary: return Color.primaryBrand
+            case .accent: return Color.accentBrand
+            case .destructive: return Color.destructive
             case .secondary: return Color(NSColor.controlColor)
-            case .destructive: return .destructive
             case .ghost: return .clear
             }
         }
         
+        
         var foregroundColor: Color {
             switch self {
-            case .primary: return .white
+            case .primary: return Color.brandWhite
+            case .accent: return Color.brandBlack
+            case .destructive: return Color.brandWhite
             case .secondary: return .primary
-            case .destructive: return .white
-            case .ghost: return .accent
+            case .ghost: return .primaryBrand
             }
         }
         
         var borderColor: Color {
             switch self {
-            case .primary, .destructive: return .clear
-            case .secondary: return .border
-            case .ghost: return .accent
+            case .ghost: return Color.primaryBrand
+            case .secondary: return Color.border
+            default: return .clear
             }
         }
     }
@@ -95,17 +106,25 @@ struct ModernButtonStyle: ButtonStyle {
         
         var padding: EdgeInsets {
             switch self {
-            case .small: return EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
-            case .medium: return EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
-            case .large: return EdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 20)
+            case .small: return EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
+            case .medium: return EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20)
+            case .large: return EdgeInsets(top: 16, leading: 24, bottom: 16, trailing: 24)
             }
         }
         
         var font: Font {
             switch self {
-            case .small: return .caption
-            case .medium: return .body
-            case .large: return .headline
+            case .small: return .caption.weight(.semibold)
+            case .medium: return .body.weight(.medium)
+            case .large: return .headline.weight(.semibold)
+            }
+        }
+        
+        var cornerRadius: CGFloat {
+            switch self {
+            case .small: return 10
+            case .medium: return 12
+            case .large: return 14
             }
         }
     }
@@ -118,35 +137,20 @@ struct ModernButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(size.font)
-            .fontWeight(.medium)
             .foregroundColor(variant.foregroundColor)
             .padding(size.padding)
             .background(
-                Group {
-                    if variant == .primary {
-                        LinearGradient(
-                            colors: [Color.accent, Color.accent.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    } else {
-                        variant.backgroundColor
-                    }
-                }
+                RoundedRectangle(cornerRadius: size.cornerRadius)
+                    .fill(variant.backgroundColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: size.cornerRadius)
+                            .stroke(variant.borderColor, lineWidth: variant == .ghost || variant == .secondary ? 1 : 0)
+                    )
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(variant.borderColor, lineWidth: variant == .secondary || variant == .ghost ? 1 : 0)
-            )
-            .cornerRadius(10)
-            .shadow(
-                color: variant == .primary ? Color.accent.opacity(0.3) : Color.black.opacity(0.1),
-                radius: variant == .primary ? 4 : 2,
-                x: 0,
-                y: variant == .primary ? 2 : 1
-            )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
@@ -262,12 +266,93 @@ struct SliderWithValue: View {
 }
 
 // MARK: - View Extensions
+// MARK: - Animated Components
+struct PulsingAnimation: ViewModifier {
+    @State private var isAnimating = false
+    let color: Color
+    let intensity: Double
+    
+    init(color: Color = .primaryBrand, intensity: Double = 0.3) {
+        self.color = color
+        self.intensity = intensity
+    }
+    
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(color, lineWidth: 2)
+                    .scaleEffect(isAnimating ? 1.1 : 1.0)
+                    .opacity(isAnimating ? 0 : intensity)
+                    .animation(
+                        Animation.easeInOut(duration: 1.5)
+                            .repeatForever(autoreverses: false),
+                        value: isAnimating
+                    )
+            )
+            .onAppear {
+                isAnimating = true
+            }
+    }
+}
+
+struct FloatingAnimation: ViewModifier {
+    @State private var isFloating = false
+    
+    func body(content: Content) -> some View {
+        content
+            .offset(y: isFloating ? -2 : 2)
+            .animation(
+                Animation.easeInOut(duration: 2.0)
+                    .repeatForever(autoreverses: true),
+                value: isFloating
+            )
+            .onAppear {
+                isFloating = true
+            }
+    }
+}
+
+// MARK: - View Extensions
 extension View {
-    func cardStyle(padding: CGFloat = 20) -> some View {
-        modifier(CardStyle(padding: padding))
+    func cardStyle(padding: CGFloat = 20, useGradient: Bool = false) -> some View {
+        modifier(CardStyle(padding: padding, useGradient: useGradient))
     }
     
     func modernButton(_ variant: ModernButtonStyle.Variant = .secondary, size: ModernButtonStyle.Size = .medium) -> some View {
         buttonStyle(ModernButtonStyle(variant, size: size))
+    }
+    
+    func pulsingBorder(color: Color = .primaryBrand, intensity: Double = 0.3) -> some View {
+        modifier(PulsingAnimation(color: color, intensity: intensity))
+    }
+    
+    func floating() -> some View {
+        modifier(FloatingAnimation())
+    }
+    
+    func glassEffect() -> some View {
+        background(
+            .regularMaterial,
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.linearGradient(
+                    colors: [.white.opacity(0.2), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ), lineWidth: 1)
+        )
+    }
+    
+    func modernSectionHeader() -> some View {
+        font(.title2)
+        .fontWeight(.bold)
+        .foregroundColor(Color.primaryBrand)
+    }
+    
+    func subtleShadow() -> some View {
+        shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
     }
 }

@@ -13,6 +13,30 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum VideoFitMode: String, CaseIterable, Identifiable, Codable {
+    case fit = "fit"        // Show entire video, may have letterboxing
+    case fill = "fill"      // Fill screen, may crop video
+    case stretch = "stretch" // Stretch to fill, may distort
+    
+    var id: String { rawValue }
+    
+    var label: String {
+        switch self {
+        case .fit: return "Fit"
+        case .fill: return "Fill"
+        case .stretch: return "Stretch"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .fit: return "Show entire video"
+        case .fill: return "Fill screen (may crop)"
+        case .stretch: return "Stretch to fill (may distort)"
+        }
+    }
+}
+
 enum FramePresetKey: String, CaseIterable, Identifiable {
     case iphone16proBlack
     case iphone16plusBlack
@@ -37,19 +61,19 @@ let framePresets: [FramePreset] = [
         key: .iphone16proBlack,
         label: "iPhone 16 Pro — Black",
         bundleImageName: "Frames/iphone16problack",
-        defaultScreen: .init(x: 7.2, y: 5.8, w: 85.6, h: 88.4)
+        defaultScreen: .init(x: 8.5, y: 7.0, w: 83.0, h: 86.0)
     ),
     FramePreset(
         key: .iphone16plusBlack,
         label: "iPhone 16 Plus — Black",
         bundleImageName: "Frames/iphone16plusframeblack",
-        defaultScreen: .init(x: 6.8, y: 5.6, w: 86.5, h: 89.0)
+        defaultScreen: .init(x: 8.5, y: 7.0, w: 83.0, h: 86.0)
     ),
     FramePreset(
         key: .custom,
         label: "Custom (Upload PNG)",
         bundleImageName: nil,
-        defaultScreen: .init(x: 7.2, y: 5.8, w: 85.6, h: 88.4)
+        defaultScreen: .init(x: 8.5, y: 7.0, w: 83.0, h: 86.0)
     )
 ]
 

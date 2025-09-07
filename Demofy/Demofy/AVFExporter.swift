@@ -12,6 +12,7 @@ struct DemofyConfig: Codable {
     let screenRect: ScreenRect // 0..100 percent
     let scale: Double          // 1.0 = fit, >1 zoom in
     let offset: Offset
+    let videoFitMode: VideoFitMode
 }
 
 final class AVFExporter {
@@ -62,8 +63,20 @@ final class AVFExporter {
         let nat = naturalSize.applying(preferredTransform)
         let srcSize = CGSize(width: abs(nat.width), height: abs(nat.height))
 
-        // Scale to cover screen rect (object-fit: cover), then apply extra zoom and offsets
-        let baseScale = max(screen.width / srcSize.width, screen.height / srcSize.height)
+        // Calculate base scale based on fit mode
+        let baseScale: CGFloat
+        switch config.videoFitMode {
+        case .fit:
+            // Fit entire video (object-fit: contain)
+            baseScale = min(screen.width / srcSize.width, screen.height / srcSize.height)
+        case .fill:
+            // Fill screen (object-fit: cover)
+            baseScale = max(screen.width / srcSize.width, screen.height / srcSize.height)
+        case .stretch:
+            // Stretch to fill (object-fit: fill)
+            baseScale = 1.0 // Will be handled by separate width/height scaling
+        }
+        
         let extraScale = CGFloat(max(0.1, config.scale))
         let finalScale = baseScale * extraScale
 
@@ -83,7 +96,18 @@ final class AVFExporter {
 
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compVideo)
         var t = preferredTransform
-        t = t.concatenating(CGAffineTransform(scaleX: finalScale, y: finalScale))
+        
+        // Apply scaling based on fit mode
+        if config.videoFitMode == .stretch {
+            // For stretch mode, scale width and height independently to fill screen
+            let scaleX = screen.width / srcSize.width
+            let scaleY = screen.height / srcSize.height
+            t = t.concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
+        } else {
+            // For fit and fill modes, use uniform scaling
+            t = t.concatenating(CGAffineTransform(scaleX: finalScale, y: finalScale))
+        }
+        
         t = t.concatenating(CGAffineTransform(translationX: tx, y: ty))
         layerInstruction.setTransform(t, at: .zero)
         instruction.layerInstructions = [layerInstruction]

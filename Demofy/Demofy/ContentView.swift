@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     // State
+    @AppStorage("isDarkMode") private var isDarkMode = false
     @State private var recordingState: RecordingState = .idle
     @State private var simulatorDevice: String = "booted"
     @State private var recordingURL: URL?
@@ -18,9 +19,10 @@ struct ContentView: View {
     @State private var screenRect: ScreenRect = framePresets.first(where: { $0.key == .iphone16plusBlack })?.defaultScreen ?? framePresets.first!.defaultScreen
     @State private var showGuides: Bool = false
 
-    @State private var scale: Double = 110 // percent - slightly zoomed to ensure proper fitting
+    @State private var scale: Double = 100 // percent - 100% for proper fitting
     @State private var offsetX: Double = 0 // -100..100
     @State private var offsetY: Double = 0 // -100..100
+    @State private var videoFitMode: VideoFitMode = .fit
 
     @State private var duration: Double = 0
     @State private var trimStart: Double = 0
@@ -40,29 +42,53 @@ struct ContentView: View {
                 // Preview Section
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Image(systemName: "play.rectangle.fill")
-                            .font(.title2)
-                            .foregroundColor(.accent)
+                        ZStack {
+                            Circle()
+                                .fill(Color.primaryBrand)
+                                .frame(width: 32, height: 32)
+                                .subtleShadow()
+                            
+                            Image(systemName: "play.rectangle.fill")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        
                         Text("Preview")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .modernSectionHeader()
                         Spacer()
+                        
+                        Button {
+                            isDarkMode.toggle()
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 36, height: 36)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.primaryBrand.opacity(0.3), lineWidth: 1)
+                                    )
+                                
+                                Image(systemName: isDarkMode ? "sun.max.fill" : "moon.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primaryBrand)
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .help(isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode")
+                        .floating()
                     }
                     
                     ZStack {
-                        // Background with gradient
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(.systemGray6), Color(.systemGray5)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                        // Modern glass background
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(.regularMaterial)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(.systemGray4), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(Color.primaryBrand.opacity(0.3), lineWidth: 2)
                             )
+                            .shadow(color: Color.primaryBrand.opacity(0.1), radius: 20, x: 0, y: 8)
+                            .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
                         
                         GeometryReader { geo in
                             let aspect = stageAspectRatio
@@ -74,57 +100,88 @@ struct ContentView: View {
                                     scale: scale,
                                     offsetX: offsetX,
                                     offsetY: offsetY,
-                                    showGuides: showGuides
+                                    showGuides: showGuides,
+                                    videoFitMode: videoFitMode
                                 )
                                 .frame(width: geo.size.width - 40, height: geo.size.height - 40)
                                 .cornerRadius(12)
-                                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                                .shadow(color: Color.primaryBrand.opacity(0.2), radius: 12, x: 0, y: 6)
+                                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
                                 
                                 // Enhanced empty state
                                 if frameImage == nil {
                                     VStack(spacing: 20) {
                                         ZStack {
                                             Circle()
-                                                .fill(
-                                                    LinearGradient(
-                                                        colors: [.accent.opacity(0.1), .accent.opacity(0.05)],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    )
-                                                )
-                                                .frame(width: 80, height: 80)
+                                                .fill(Color.primaryBrand)
+                                                .frame(width: 96, height: 96)
+                                                .subtleShadow()
+                                                .floating()
+                                            
+                                            Circle()
+                                                .fill(.white.opacity(0.1))
+                                                .frame(width: 76, height: 76)
                                             
                                             Image(systemName: "iphone.gen3")
-                                                .font(.system(size: 32, weight: .light))
-                                                .foregroundColor(.accent)
+                                                .font(.system(size: 36, weight: .medium))
+                                                .foregroundColor(.white)
+                                                .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                                         }
                                         
-                                        VStack(spacing: 8) {
+                                        VStack(spacing: 12) {
                                             Text("Ready to Create")
-                                                .font(.title3)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.primary)
+                                                .font(.title2)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.primaryBrand)
                                             
                                             Text("Select a device frame to get started")
-                                                .font(.subheadline)
+                                                .font(.body)
                                                 .foregroundColor(.secondary)
                                                 .multilineTextAlignment(.center)
                                         }
                                         
-                                        HStack(spacing: 8) {
-                                            Image(systemName: "arrow.right.circle.fill")
-                                                .foregroundColor(.accent)
+                                        HStack(spacing: 12) {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Color.accentBrand.opacity(0.2))
+                                                    .frame(width: 24, height: 24)
+                                                
+                                                Image(systemName: "arrow.right.circle.fill")
+                                                    .font(.system(size: 14, weight: .medium))
+                                                    .foregroundColor(.accentBrand)
+                                            }
+                                            
                                             Text("Choose from Frame Preset menu")
-                                                .font(.caption)
+                                                .font(.callout)
+                                                .fontWeight(.medium)
                                                 .foregroundColor(.secondary)
                                         }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
-                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                        .background(
+                                            Capsule()
+                                                .fill(.thickMaterial)
+                                                .overlay(
+                                                    Capsule()
+                                                        .stroke(Color.accentBrand.opacity(0.3), lineWidth: 1)
+                                                )
+                                        )
+                                        .subtleShadow()
                                     }
                                     .padding(32)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                                    .shadow(radius: 12, y: 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .fill(.thickMaterial)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 20)
+                                                    .stroke(
+                                                        Color.border,
+                                                        lineWidth: 1
+                                                    )
+                                            )
+                                    )
+                                    .shadow(color: Color.primaryBrand.opacity(0.2), radius: 20, x: 0, y: 8)
+                                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
                                 }
                             }
                             .aspectRatio(aspect, contentMode: .fit)
@@ -138,12 +195,19 @@ struct ContentView: View {
                 // Timeline Section
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Image(systemName: "timeline.selection")
-                            .font(.title2)
-                            .foregroundColor(.accent)
+                        ZStack {
+                            Circle()
+                                .fill(Color.secondaryBrand)
+                                .frame(width: 32, height: 32)
+                                .subtleShadow()
+                            
+                            Image(systemName: "timeline.selection")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.brandBlack)
+                        }
+                        
                         Text("Timeline")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .modernSectionHeader()
                         Spacer()
                     }
                     
@@ -209,16 +273,10 @@ struct ContentView: View {
                     .padding(20)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(.systemGray6), Color(.systemGray5)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(Color(NSColor.controlBackgroundColor))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color(.systemGray4), lineWidth: 1)
+                                    .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             )
                     )
                 }
@@ -287,7 +345,7 @@ struct ContentView: View {
                             if let path = recordingURL?.path {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Divider()
-                                        .background(Color(.systemGray4))
+                                        .background(Color(NSColor.separatorColor))
                                     
                                     HStack {
                                         Image(systemName: "folder.fill")
@@ -313,16 +371,10 @@ struct ContentView: View {
                         .padding(20)
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color(.systemGray6), Color(.systemGray5)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                                .fill(Color(NSColor.controlBackgroundColor))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color(.systemGray4), lineWidth: 1)
+                                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                                 )
                         )
                     }
@@ -408,20 +460,48 @@ struct ContentView: View {
                                     }
                                 }
                             }
+                            
+                            LabeledControl("Video Fit") {
+                                VStack(spacing: 12) {
+                                    Picker("Video Fit Mode", selection: $videoFitMode) {
+                                        ForEach(VideoFitMode.allCases) { mode in
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(mode.label)
+                                                    .font(.body)
+                                                Text(mode.description)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .tag(mode)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    
+                                    HStack(spacing: 8) {
+                                        Button("Fit to Frame") {
+                                            Task { await autoFitVideo() }
+                                        }
+                                        .modernButton(.secondary, size: .small)
+                                        .disabled(videoURL == nil)
+                                        
+                                        Button("Reset") {
+                                            scale = 100
+                                            offsetX = 0
+                                            offsetY = 0
+                                        }
+                                        .modernButton(.ghost, size: .small)
+                                        .disabled(videoURL == nil)
+                                    }
+                                }
+                            }
                         }
                         .padding(20)
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color(.systemGray6), Color(.systemGray5)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                                .fill(Color(NSColor.controlBackgroundColor))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color(.systemGray4), lineWidth: 1)
+                                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                                 )
                         )
                     }
@@ -505,16 +585,10 @@ struct ContentView: View {
                         .padding(20)
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color(.systemGray6), Color(.systemGray5)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                                .fill(Color(NSColor.controlBackgroundColor))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color(.systemGray4), lineWidth: 1)
+                                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                                 )
                         )
                     }
@@ -524,16 +598,7 @@ struct ContentView: View {
             .frame(width: 420)
         }
         .padding(24)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(.systemBackground),
-                    Color(.systemGray6).opacity(0.3)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(Color.background.ignoresSafeArea())
         .onAppear {
             // Don't load any frame by default - show popup instead
         }
@@ -542,6 +607,7 @@ struct ContentView: View {
             // Remove notification observers
             NotificationCenter.default.removeObserver(self)
         }
+        .preferredColorScheme(isDarkMode ? .dark : .light)
     }
 
     // MARK: - Helpers
@@ -641,10 +707,66 @@ struct ContentView: View {
             // Start playback automatically
             player?.play()
             
+            // Auto-fit the video when loaded
+            await autoFitVideo()
             Task { await updateStageAspect() }
+            
+            // Force a UI update to ensure the video gravity is applied
+            DispatchQueue.main.async {
+                // Trigger a view update
+                self.videoFitMode = self.videoFitMode
+            }
         } catch {
             print("Failed to load video: \(error.localizedDescription)")
             print("Error details: \(error)")
+        }
+    }
+    
+    private func autoFitVideo() async {
+        guard let player, let asset = player.currentItem?.asset else { return }
+        
+        do {
+            guard let track = try await asset.loadTracks(withMediaType: .video).first else { return }
+            let (naturalSize, transform) = try await track.load(.naturalSize, .preferredTransform)
+            let videoSize = naturalSize.applying(transform)
+            let videoAspectRatio = abs(videoSize.width / videoSize.height)
+            
+            // Calculate screen area aspect ratio
+            let screenAspectRatio = (screenRect.w / 100.0) / (screenRect.h / 100.0)
+            
+            // Calculate optimal scale for fitting based on video fit mode
+            let fitScale: Double
+            switch videoFitMode {
+            case .fit:
+                // For fit mode, calculate scale to show entire video
+                if videoAspectRatio > screenAspectRatio {
+                    // Video is wider than screen - fit to width
+                    fitScale = 100.0
+                } else {
+                    // Video is taller than screen - fit to height  
+                    fitScale = 100.0
+                }
+            case .fill:
+                // For fill mode, calculate scale to fill screen
+                if videoAspectRatio > screenAspectRatio {
+                    // Video is wider than screen - fit to height
+                    fitScale = 100.0
+                } else {
+                    // Video is taller than screen - fit to width
+                    fitScale = 100.0
+                }
+            case .stretch:
+                // For stretch mode, no scaling needed
+                fitScale = 100.0
+            }
+            
+            // Apply the fit scale
+            scale = fitScale
+            offsetX = 0
+            offsetY = 0
+            
+        } catch {
+            print("Failed to auto-fit video: \(error)")
         }
     }
 
@@ -674,7 +796,8 @@ struct ContentView: View {
             trim: .init(start: trimStart, end: trimEnd),
             screenRect: screenRect,
             scale: scale / 100.0,
-            offset: .init(x: offsetX / 100.0, y: offsetY / 100.0)
+            offset: .init(x: offsetX / 100.0, y: offsetY / 100.0),
+            videoFitMode: videoFitMode
         )
         var frameURL: URL?
         if let u = frameImageURL {
