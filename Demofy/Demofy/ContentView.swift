@@ -12,13 +12,13 @@ struct ContentView: View {
     @State private var videoURL: URL?
     @State private var player: AVPlayer?
 
-    @State private var framePreset: FramePresetKey = .iphone16proBlack
+    @State private var framePreset: FramePresetKey = .iphone16plusBlack
     @State private var frameImageURL: URL?
     @State private var frameImage: NSImage?
-    @State private var screenRect: ScreenRect = framePresets.first!.defaultScreen
-    @State private var showGuides: Bool = true
+    @State private var screenRect: ScreenRect = framePresets.first(where: { $0.key == .iphone16plusBlack })?.defaultScreen ?? framePresets.first!.defaultScreen
+    @State private var showGuides: Bool = false
 
-    @State private var scale: Double = 100 // percent
+    @State private var scale: Double = 110 // percent - slightly zoomed to ensure proper fitting
     @State private var offsetX: Double = 0 // -100..100
     @State private var offsetY: Double = 0 // -100..100
 
@@ -33,243 +33,514 @@ struct ContentView: View {
 
     private let recorder = SimulatorRecorder()
     private let exporter = AVFExporter()
-    private let ffmpeg = FFmpegRunner()
 
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(spacing: 12) {
-                // Preview
-                GroupBox("Preview") {
-                    GeometryReader { geo in
-                        let aspect = stageAspectRatio
-                        ZStack {
-                            Color(NSColor.windowBackgroundColor)
-                            VideoFramePreview(
-                                player: player,
-                                overlayImage: frameImage,
-                                screen: screenRect,
-                                scale: scale,
-                                offsetX: offsetX,
-                                offsetY: offsetY,
-                                showGuides: showGuides
+        HStack(spacing: 24) {
+            VStack(spacing: 20) {
+                // Preview Section
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "play.rectangle.fill")
+                            .font(.title2)
+                            .foregroundColor(.accent)
+                        Text("Preview")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        Spacer()
+                    }
+                    
+                    ZStack {
+                        // Background with gradient
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(.systemGray6), Color(.systemGray5)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(.systemGray4), lineWidth: 1)
+                            )
+                        
+                        GeometryReader { geo in
+                            let aspect = stageAspectRatio
+                            ZStack {
+                                VideoFramePreview(
+                                    player: player,
+                                    overlayImage: frameImage,
+                                    screen: screenRect,
+                                    scale: scale,
+                                    offsetX: offsetX,
+                                    offsetY: offsetY,
+                                    showGuides: showGuides
+                                )
+                                .frame(width: geo.size.width - 40, height: geo.size.height - 40)
+                                .cornerRadius(12)
+                                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                                
+                                // Enhanced empty state
+                                if frameImage == nil {
+                                    VStack(spacing: 20) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [.accent.opacity(0.1), .accent.opacity(0.05)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 80, height: 80)
+                                            
+                                            Image(systemName: "iphone.gen3")
+                                                .font(.system(size: 32, weight: .light))
+                                                .foregroundColor(.accent)
+                                        }
+                                        
+                                        VStack(spacing: 8) {
+                                            Text("Ready to Create")
+                                                .font(.title3)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.primary)
+                                            
+                                            Text("Select a device frame to get started")
+                                                .font(.subheadline)
+                                                .foregroundColor(.secondary)
+                                                .multilineTextAlignment(.center)
+                                        }
+                                        
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "arrow.right.circle.fill")
+                                                .foregroundColor(.accent)
+                                            Text("Choose from Frame Preset menu")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                    }
+                                    .padding(32)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                                    .shadow(radius: 12, y: 6)
+                                }
+                            }
+                            .aspectRatio(aspect, contentMode: .fit)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            .padding(20)
+                        }
+                    }
+                    .frame(minHeight: 450)
+                }
+
+                // Timeline Section
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "timeline.selection")
+                            .font(.title2)
+                            .foregroundColor(.accent)
+                        Text("Timeline")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        Spacer()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 16) {
+                        SliderWithValue(
+                            "Start Time",
+                            value: $trimStart,
+                            in: 0...max(1, duration - 0.1),
+                            step: 1,
+                            format: "%.0f",
+                            unit: "s"
+                        ) { _ in
+                            trimStart = min(trimStart, trimEnd)
+                        }
+                        
+                        SliderWithValue(
+                            "End Time",
+                            value: $trimEnd,
+                            in: 0...max(1, duration),
+                            step: 1,
+                            format: "%.0f",
+                            unit: "s"
+                        ) { _ in
+                            trimEnd = max(trimEnd, trimStart)
+                        }
+                        
+                        HStack(spacing: 20) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Duration")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(formatTime(max(0, trimEnd - trimStart)))
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.accent)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(.ultraThinMaterial)
+                            )
+                            
+                            Spacer()
+                            
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Text("Total")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(formatTime(duration))
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(.ultraThinMaterial)
                             )
                         }
-                        .aspectRatio(aspect, contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     }
-                    .frame(minHeight: 420)
-                }
-
-                // Trim
-                GroupBox("Trim") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Start \(formatTime(trimStart))")
-                            let upperBound = max(1, duration - 0.1)
-                            Slider(value: $trimStart, in: 0...upperBound, step: 1) { _ in
-                                trimStart = min(trimStart, trimEnd)
-                            }
-                        }
-                        HStack {
-                            Text("End \(formatTime(trimEnd))")
-                            let endUpperBound = max(1, duration)
-                            Slider(value: $trimEnd, in: 0...endUpperBound, step: 1) { _ in
-                                trimEnd = max(trimEnd, trimStart)
-                            }
-                        }
-                        Text("Duration: \(formatTime(max(0, trimEnd - trimStart)))")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    .padding(20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(.systemGray6), Color(.systemGray5)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color(.systemGray4), lineWidth: 1)
+                            )
+                    )
                 }
             }
-            .frame(minWidth: 620)
+            .frame(minWidth: 580)
 
             // Right controls
-            VStack(spacing: 12) {
-                GroupBox("Record iOS Simulator") {
-                    VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Recording Section
+                    VStack(alignment: .leading, spacing: 16) {
                         HStack {
-                            Text("Device:")
-                            TextField("booted", text: $simulatorDevice)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        HStack {
-                            if recordingState != .recording {
-                                Button {
-                                    let url = askSaveURL(suggested: "demofy-recording.mp4")
-                                    guard let url else { return }
-                                    do {
-                                        try recorder.startRecording(saveTo: url, device: simulatorDevice)
-                                        recordingURL = url
-                                        recordingState = .recording
-                                    } catch { print("simctl start error:", error) }
-                                } label: {
-                                    Label("Start Recording", systemImage: "record.circle.fill")
-                                }
-                            } else {
-                                Button(role: .destructive) {
-                                    recorder.stopRecording()
-                                    recordingState = .recorded
-                                } label: {
-                                    Label("Stop", systemImage: "stop.fill")
-                                }
-                            }
-                            Button("Reset") {
-                                recorder.stopRecording()
-                                recordingURL = nil
-                                recordingState = .idle
-                            }
-                        }
-                        if let path = recordingURL?.path {
-                            HStack {
-                                Image(systemName: "folder")
-                                Text(path).lineLimit(1).truncationMode(.middle)
-                                Spacer()
-                                Button("Import") {
-                                    if let url = recordingURL {
-                                        videoURL = url
-                                        Task { await loadVideo(from: url) }
-                                    }
-                                }
-                            }
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        }
-                    }
-                }
-
-                GroupBox("Source") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            Button {
-                                if let url = askOpenURL(allowed: [.movie]) {
-                                    Task { await loadVideo(from: url) }
-                                }
-                            } label: { Label("Import Video", systemImage: "square.and.arrow.down") }
-
-                            Button {
-                                if let url = askOpenURL(allowed: [.png]) {
-                                    frameImageURL = url
-                                    frameImage = NSImage(contentsOf: url)
-                                    framePreset = .custom
-                                    Task { await updateStageAspect() }
-                                }
-                            } label: { Label("Upload Frame PNG", systemImage: "photo") }
-                        }
-                        // Frame preset picker
-                        Picker("Frame Preset", selection: $framePreset) {
-                            ForEach(framePresets) { p in
-                                Text(p.label).tag(p.key)
-                            }
-                        }
-                        .onChange(of: framePreset) { _, new in
-                            let p = framePresets.first { $0.key == new }!
-                            screenRect = p.defaultScreen
-                            if let name = p.bundleImageName, let url = Bundle.main.url(forResource: name, withExtension: "png") {
-                                frameImageURL = url
-                                frameImage = NSImage(contentsOf: url)
-                                Task { await updateStageAspect() }
-                            } else if new == .custom {
-                                // keep current custom image
-                            }
-                        }
-
-                        Toggle("Show Guides", isOn: $showGuides)
-
-                        Divider()
-
-                        // Screen window sliders
-                        VStack(alignment: .leading) {
-                            HStack { Text("Left"); Slider(value: $screenRect.x, in: 0...30, step: 0.1); Text("\(screenRect.x, specifier: "%.1f")%").frame(width: 60) }
-                            HStack { Text("Top"); Slider(value: $screenRect.y, in: 0...20, step: 0.1); Text("\(screenRect.y, specifier: "%.1f")%").frame(width: 60) }
-                            HStack { Text("Width"); Slider(value: $screenRect.w, in: 50...100, step: 0.1); Text("\(screenRect.w, specifier: "%.1f")%").frame(width: 60) }
-                            HStack { Text("Height"); Slider(value: $screenRect.h, in: 60...100, step: 0.1); Text("\(screenRect.h, specifier: "%.1f")%").frame(width: 60) }
-                        }
-
-                        HStack {
-                            Button("Fit to Preset") {
-                                if let p = framePresets.first(where: { $0.key == framePreset }) {
-                                    screenRect = p.defaultScreen
-                                }
-                            }
-                            Button("Reset Screen") {
-                                screenRect = .init(x: 0, y: 0, w: 100, h: 100)
-                                scale = 100; offsetX = 0; offsetY = 0
-                            }
-                        }
-                    }
-                }
-
-                GroupBox("Inside Screen Adjustments") {
-                    VStack(alignment: .leading) {
-                        HStack { Text("Zoom"); Slider(value: $scale, in: 10...400, step: 1); Text("\(Int(scale))%").frame(width: 60) }
-                        HStack { Text("Offset X"); Slider(value: $offsetX, in: -100...100, step: 1); Text("\(Int(offsetX))").frame(width: 60) }
-                        HStack { Text("Offset Y"); Slider(value: $offsetY, in: -100...100, step: 1); Text("\(Int(offsetY))").frame(width: 60) }
-                    }
-                }
-
-                GroupBox("Export") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Format")
-                            Picker("", selection: $outputFormat) {
-                                ForEach(ExportFormat.allCases) { fmt in Text(fmt.rawValue.uppercased()).tag(fmt) }
-                            }
-                            .pickerStyle(.segmented)
+                            Image(systemName: "record.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.accent)
+                            Text("Record iOS Simulator")
+                                .font(.title2)
+                                .fontWeight(.bold)
                             Spacer()
-                            Text("Canvas")
-                            TextField("Width", value: $canvas.widthInt, formatter: NumberFormatter())
-                                .frame(width: 70)
-                            Text("×")
-                            TextField("Height", value: $canvas.heightInt, formatter: NumberFormatter())
-                                .frame(width: 70)
                         }
-
-                        HStack(spacing: 12) {
-                            Button {
-                                Task { await exportWithAVFoundation() }
-                            } label: { Label("Export (AVFoundation)", systemImage: "arrow.down.doc") }
-                            .disabled(videoURL == nil)
-                            if exporting { ProgressView().controlSize(.small) }
-                            if !exportProgressText.isEmpty { Text(exportProgressText).font(.caption).foregroundColor(.secondary) }
-                        }
-
-                        // Optional: FFmpeg — run a raw command if you prefer parity with the web prototype
-                        Button {
-                            guard let cmd = makeFFmpegCommandPreview() else { return }
-                            let panel = NSSavePanel()
-                            panel.nameFieldStringValue = "demofy-output.\(outputFormat.rawValue)"
-                            panel.begin { resp in
-                                guard resp == .OK, let outURL = panel.url else { return }
-                                // Replace output filename in command preview
-                                let safeCommand = cmd.replacingOccurrences(of: "demofy-output.\(self.outputFormat.rawValue)", with: outURL.lastPathComponent)
-                                let cwd = outURL.deletingLastPathComponent()
-                                exportProgressText = "Running FFmpeg…"
-                                ffmpeg.runRaw(command: safeCommand, in: cwd, onProgress: { prog in
-                                    DispatchQueue.main.async {
-                                        self.exportProgressText = "FFmpeg time=\(formatTime(prog.seconds))"
+                        
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                StatusIndicator(state: recordingState)
+                                Spacer()
+                            }
+                            
+                            LabeledControl("Device ID") {
+                                TextField("booted", text: $simulatorDevice)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(.body, design: .monospaced))
+                            }
+                            
+                            HStack(spacing: 12) {
+                                if recordingState != .recording {
+                                    Button {
+                                        let url = askSaveURL(suggested: "demofy-recording.mp4")
+                                        guard let url else { return }
+                                        do {
+                                            try recorder.startRecording(saveTo: url, device: simulatorDevice)
+                                            recordingURL = url
+                                            recordingState = .recording
+                                        } catch { print("simctl start error:", error) }
+                                    } label: {
+                                        Label("Start Recording", systemImage: "record.circle.fill")
                                     }
-                                }, completion: { result in
-                                    DispatchQueue.main.async {
-                                        switch result {
-                                        case .success: self.exportProgressText = "FFmpeg export completed"
-                                        case .failure(let err): self.exportProgressText = "FFmpeg failed: \(err.localizedDescription)"
+                                    .modernButton(.primary, size: .medium)
+                                } else {
+                                    Button {
+                                        recorder.stopRecording()
+                                        recordingState = .recorded
+                                    } label: {
+                                        Label("Stop Recording", systemImage: "stop.fill")
+                                    }
+                                    .modernButton(.destructive, size: .medium)
+                                }
+                                
+                                Button("Reset") {
+                                    recorder.stopRecording()
+                                    recordingURL = nil
+                                    recordingState = .idle
+                                }
+                                .modernButton(.ghost, size: .medium)
+                            }
+                            
+                            if let path = recordingURL?.path {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Divider()
+                                        .background(Color(.systemGray4))
+                                    
+                                    HStack {
+                                        Image(systemName: "folder.fill")
+                                            .foregroundColor(.accent)
+                                        Text(path)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                    }
+                                    
+                                    Button("Import to Timeline") {
+                                        if let url = recordingURL {
+                                            videoURL = url
+                                            Task { await loadVideo(from: url) }
                                         }
                                     }
-                                })
+                                    .modernButton(.secondary, size: .small)
+                                }
                             }
-                        } label: { Label("Export via FFmpeg (advanced)", systemImage: "terminal") }
-                        .disabled(videoURL == nil)
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(.systemGray6), Color(.systemGray5)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color(.systemGray4), lineWidth: 1)
+                                )
+                        )
+                    }
+
+                    // Source & Frame Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.title2)
+                                .foregroundColor(.accent)
+                            Text("Source & Frame")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Spacer()
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack(spacing: 12) {
+                                Button {
+                                    if let url = askOpenURL(allowed: [.movie]) {
+                                        Task { await loadVideo(from: url) }
+                                    }
+                                } label: { 
+                                    Label("Import Video", systemImage: "square.and.arrow.down") 
+                                }
+                                .modernButton(.secondary, size: .medium)
+
+                                Button {
+                                    if let url = askOpenURL(allowed: [.png]) {
+                                        frameImageURL = url
+                                        frameImage = NSImage(contentsOf: url)
+                                        framePreset = .custom
+                                        Task { await updateStageAspect() }
+                                    }
+                                } label: { 
+                                    Label("Custom Frame", systemImage: "photo") 
+                                }
+                                .modernButton(.secondary, size: .medium)
+                            }
+                            
+                            LabeledControl("Device Frame") {
+                                Picker("Frame Preset", selection: $framePreset) {
+                                    ForEach(framePresets) { p in
+                                        Text(p.label).tag(p.key)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .overlay(
+                                    // Add pulsing highlight when no frame is selected
+                                    frameImage == nil ? 
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.blue, lineWidth: 3)
+                                        .scaleEffect(frameImage == nil ? 1.05 : 1.0)
+                                        .opacity(frameImage == nil ? 0.8 : 0.0)
+                                        .animation(
+                                            frameImage == nil ? 
+                                            Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true) : 
+                                            .default, 
+                                            value: frameImage == nil
+                                        )
+                                    : nil
+                                )
+                                .onChange(of: framePreset) { _, new in
+                                    let p = framePresets.first { $0.key == new }!
+                                    screenRect = p.defaultScreen
+                                    if let name = p.bundleImageName {
+                                        // Try with the Frames/ prefix first
+                                        if let url = Bundle.main.url(forResource: name, withExtension: "png") {
+                                            frameImageURL = url
+                                            frameImage = NSImage(contentsOf: url)
+                                            Task { await updateStageAspect() }
+                                        } else {
+                                            // Try without the Frames/ prefix
+                                            let nameWithoutPrefix = name.replacingOccurrences(of: "Frames/", with: "")
+                                            if let url = Bundle.main.url(forResource: nameWithoutPrefix, withExtension: "png") {
+                                                frameImageURL = url
+                                                frameImage = NSImage(contentsOf: url)
+                                                Task { await updateStageAspect() }
+                                            }
+                                        }
+                                    } else if new == .custom {
+                                        // keep current custom image
+                                    }
+                                }
+                            }
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(.systemGray6), Color(.systemGray5)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color(.systemGray4), lineWidth: 1)
+                                )
+                        )
+                    }
+
+                    // Export Settings Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Image(systemName: "arrow.down.doc.fill")
+                                .font(.title2)
+                                .foregroundColor(.accent)
+                            Text("Export Settings")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Spacer()
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack(spacing: 16) {
+                                LabeledControl("Format") {
+                                    Picker("", selection: $outputFormat) {
+                                        ForEach(ExportFormat.allCases) { fmt in 
+                                            Text(fmt.rawValue.uppercased()).tag(fmt) 
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
+                                }
+                                
+                                Spacer()
+                                
+                                LabeledControl("Resolution") {
+                                    HStack(spacing: 8) {
+                                        TextField("Width", value: $canvas.widthInt, formatter: NumberFormatter())
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(width: 80)
+                                        Text("×")
+                                            .foregroundColor(.secondary)
+                                        TextField("Height", value: $canvas.heightInt, formatter: NumberFormatter())
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(width: 80)
+                                    }
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                Button {
+                                    Task { await exportWithAVFoundation() }
+                                } label: { 
+                                    HStack {
+                                        if exporting {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                        } else {
+                                            Image(systemName: "arrow.down.doc.fill")
+                                        }
+                                        Text(exporting ? "Exporting..." : "Export Video")
+                                    }
+                                }
+                                .modernButton(.primary, size: .large)
+                                .disabled(videoURL == nil || exporting)
+                                .frame(maxWidth: .infinity)
+                                
+                            }
+                            
+                            if !exportProgressText.isEmpty {
+                                HStack {
+                                    Image(systemName: "info.circle.fill")
+                                        .foregroundColor(.accent)
+                                    Text(exportProgressText)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(.ultraThinMaterial)
+                                )
+                            }
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(.systemGray6), Color(.systemGray5)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(Color(.systemGray4), lineWidth: 1)
+                                )
+                        )
                     }
                 }
-                Spacer()
+                .padding(.vertical, 8)
             }
             .frame(width: 420)
         }
-        .padding(12)
+        .padding(24)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(.systemBackground),
+                    Color(.systemGray6).opacity(0.3)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .onAppear {
+            // Don't load any frame by default - show popup instead
+        }
         .onDisappear {
             player?.pause()
+            // Remove notification observers
+            NotificationCenter.default.removeObserver(self)
         }
     }
 
@@ -306,18 +577,74 @@ struct ContentView: View {
 
     private func loadVideo(from url: URL?) async {
         guard let url else { return }
+        
+        // Check if file exists and is accessible
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("Video file does not exist at path: \(url.path)")
+            return
+        }
+        
+        // Check file permissions
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
+            print("Video file is not readable at path: \(url.path)")
+            return
+        }
+        
         videoURL = url
         let asset = AVURLAsset(url: url)
+        
         do {
+            // Load basic asset properties first
+            let isPlayable = try await asset.load(.isPlayable)
+            guard isPlayable else {
+                print("Video asset is not playable")
+                return
+            }
+            
+            let hasVideoTracks = try await asset.loadTracks(withMediaType: .video)
+            guard !hasVideoTracks.isEmpty else {
+                print("Video asset has no video tracks")
+                return
+            }
+            
+            // Load duration
             let newDuration = try await asset.load(.duration).seconds
             duration = newDuration.isFinite ? newDuration : 0
             trimStart = 0
             trimEnd = duration
+            
+            // Create player item and player
             let item = AVPlayerItem(asset: asset)
             player = AVPlayer(playerItem: item)
-        Task { await updateStageAspect() }
+            
+            // Add error observation
+            NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { notification in
+                if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
+                    print("Player failed to play to end time: \(error.localizedDescription)")
+                }
+            }
+            
+            NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemNewErrorLogEntry,
+                object: item,
+                queue: .main
+            ) { notification in
+                if let errorLog = notification.object as? AVPlayerItemErrorLog {
+                    print("Player error log entry: \(errorLog)")
+                }
+            }
+            
+            // Start playback automatically
+            player?.play()
+            
+            Task { await updateStageAspect() }
         } catch {
-            print("Failed to load video duration: \(error)")
+            print("Failed to load video: \(error.localizedDescription)")
+            print("Error details: \(error)")
         }
     }
 
@@ -369,44 +696,6 @@ struct ContentView: View {
         exporting = false
     }
 
-    // Create an FFmpeg command string similar to the web prototype for parity
-    private func makeFFmpegCommandPreview() -> String? {
-        guard let input = videoURL else { return nil }
-        // We only return command text; FFmpeg must be installed on PATH or provided in app.
-        let outW = Int(canvas.width), outH = Int(canvas.height)
-        let sx = Int((screenRect.x / 100.0) * Double(outW))
-        let sy = Int((screenRect.y / 100.0) * Double(outH))
-        let sw = max(8, Int((screenRect.w / 100.0) * Double(outW)))
-        let sh = max(8, Int((screenRect.h / 100.0) * Double(outH)))
-
-        let extraZoom = max(0.1, scale / 100.0)
-        let offX = Int((offsetX / 100.0) * Double(sw) / 2.0)
-        let offY = Int((offsetY / 100.0) * Double(sh) / 2.0)
-
-        var trim = ""
-        if trimEnd > trimStart {
-            let s = Int(trimStart.rounded(.towardZero))
-            let e = Int(trimEnd.rounded(.towardZero))
-            trim = "-ss \(s) -to \(e) "
-        }
-        let frameName: String? = {
-            if let url = frameImageURL { return url.lastPathComponent }
-            if let name = framePresets.first(where: { $0.key == framePreset })?.bundleImageName { return "\(name).png" }
-            return nil
-        }()
-
-        let vf1 = "[0:v]scale=\(sw):\(sh):force_original_aspect_ratio=increase," +
-                  "crop=\(sw):\(sh):\(sw/2 - Int(Double(sw)/(2*extraZoom)) + offX):\(sh/2 - Int(Double(sh)/(2*extraZoom)) + offY)[vid];" +
-                  "color=c=black:size=\(outW)x\(outH)[bg];[bg][vid]overlay=\(sx):\(sy)[base]"
-
-        var cmd = "ffmpeg \(trim)-i \"\(input.lastPathComponent)\" "
-        if let frameName {
-            cmd += "-i \"\(frameName)\" -filter_complex \"\(vf1);[1:v]scale=\(outW):\(outH)[frm];[base][frm]overlay=0:0:format=auto\" -pix_fmt yuv420p -c:a copy -movflags +faststart \"demofy-output.\(outputFormat.rawValue)\""
-        } else {
-            cmd += "-filter_complex \"\(vf1)\" -pix_fmt yuv420p -c:a copy -movflags +faststart \"demofy-output.\(outputFormat.rawValue)\""
-        }
-        return cmd
-    }
 }
 
 private extension CGSize {

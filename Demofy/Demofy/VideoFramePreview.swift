@@ -23,8 +23,10 @@ struct VideoFramePreview: NSViewRepresentable {
             guidesLayer.backgroundColor = .none
 
             playerLayer.videoGravity = .resizeAspectFill
+            playerLayer.backgroundColor = NSColor.clear.cgColor
+            playerLayer.masksToBounds = true
 
-            layer?.addSublayer(playerLayer) // we’ll size/transform it inside screen window
+            layer?.addSublayer(playerLayer) // we'll size/transform it inside screen window
             layer?.addSublayer(overlayLayer)
             layer?.addSublayer(guidesLayer)
         }
@@ -47,22 +49,50 @@ struct VideoFramePreview: NSViewRepresentable {
         v.playerLayer.player = player
         return v
     }
+    
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: PreviewView, context: Context) -> CGSize {
+        let width = proposal.width ?? 400
+        let height = proposal.height ?? 300
+        return CGSize(width: width, height: height)
+    }
 
     func updateNSView(_ v: PreviewView, context: Context) {
-        v.playerLayer.player = player
+        // Only update player if it has changed
+        if v.playerLayer.player !== player {
+            v.playerLayer.player = player
+        }
 
-        // Lay out full canvas
-        let bounds = v.bounds
+        // Ensure the view has proper bounds - use the superview's bounds if available
+        var bounds = v.bounds
+        if bounds.width == 0 || bounds.height == 0 {
+            if let superview = v.superview {
+                bounds = superview.bounds
+                v.frame = bounds
+            } else {
+                // Fallback to reasonable default
+                bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
+                v.frame = bounds
+            }
+        }
+        
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
         // Overlay (device frame)
         v.overlayLayer.frame = bounds
+        
         if let img = overlayImage {
-            v.overlayLayer.contents = img
-            v.overlayLayer.contentsGravity = .resizeAspect
-            v.overlayLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
-            v.overlayLayer.isHidden = false
+            // Convert NSImage to CGImage for CALayer
+            if let cgImage = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                v.overlayLayer.contents = cgImage
+                v.overlayLayer.contentsGravity = .resizeAspect
+                v.overlayLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+                v.overlayLayer.isHidden = false
+                v.overlayLayer.opacity = 1.0
+                v.overlayLayer.backgroundColor = NSColor.clear.cgColor
+            } else {
+                v.overlayLayer.isHidden = true
+            }
         } else {
             v.overlayLayer.isHidden = true
         }
@@ -77,7 +107,7 @@ struct VideoFramePreview: NSViewRepresentable {
         // Set player layer to fill the screen rect
         v.playerLayer.frame = screenRect
 
-        // Calculate zoom level (inverse because we want to scale the content, not the container)
+        // Calculate zoom level (1.0 = fit, >1.0 = zoom in)
         let zoom = max(0.1, scale / 100.0)
         
         // Calculate offsets relative to screen size
@@ -88,13 +118,28 @@ struct VideoFramePreview: NSViewRepresentable {
         // Center the video within the screen rect
         v.playerLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         v.playerLayer.position = CGPoint(x: screenRect.midX, y: screenRect.midY)
-        v.playerLayer.videoGravity = .resizeAspect
+        
+        // Use resizeAspectFill to ensure the video fills the screen area
+        // This will crop the video if needed to maintain aspect ratio
+        v.playerLayer.videoGravity = .resizeAspectFill
         v.playerLayer.masksToBounds = true
         
+        // Ensure the layer is properly configured for video display
+        v.playerLayer.backgroundColor = NSColor.clear.cgColor
+        
+        // Ensure the player layer is visible when there's a player
+        if player != nil {
+            v.playerLayer.isHidden = false
+            v.playerLayer.opacity = 1.0
+        } else {
+            v.playerLayer.isHidden = true
+        }
+        
         // Apply transform for zoom and offset
+        // For zoom: 1.0 = normal size, >1.0 = zoom in, <1.0 = zoom out
         var t = CATransform3DIdentity
         t = CATransform3DTranslate(t, dx, -dy, 0) // Invert dy to match coordinate system
-        t = CATransform3DScale(t, 1/zoom, 1/zoom, 1) // Invert zoom to scale content, not container
+        t = CATransform3DScale(t, zoom, zoom, 1) // Direct zoom scaling
         v.playerLayer.transform = t
         
         // Rounded corners for the screen
