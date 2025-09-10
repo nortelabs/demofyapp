@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var duration: Double = 0
     @State private var trimStart: Double = 0
     @State private var trimEnd: Double = 0
+    @State private var isPlaying: Bool = false
 
     @State private var outputFormat: ExportFormat = .mp4
     @State private var canvas: CGSize = CGSize(width: 1080, height: 1920)
@@ -209,6 +210,28 @@ struct ContentView: View {
                         Text("Timeline")
                             .modernSectionHeader()
                         Spacer()
+                        
+                        Button {
+                            togglePlayPause()
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .frame(width: 36, height: 36)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.primaryBrand.opacity(0.3), lineWidth: 1)
+                                    )
+                                
+                                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.primaryBrand)
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .help(isPlaying ? "Pause Video" : "Play Video")
+                        .disabled(player == nil)
+                        .floating()
                     }
                     
                     VStack(alignment: .leading, spacing: 16) {
@@ -219,8 +242,15 @@ struct ContentView: View {
                             step: 1,
                             format: "%.0f",
                             unit: "s"
-                        ) { _ in
+                        ) { isEditing in
                             trimStart = min(trimStart, trimEnd)
+                            if isEditing {
+                                // Live scrubbing - seek while dragging
+                                seekToTime(trimStart, pause: true)
+                            } else {
+                                // Final seek when done
+                                seekToTime(trimStart, pause: true)
+                            }
                         }
                         
                         SliderWithValue(
@@ -230,8 +260,15 @@ struct ContentView: View {
                             step: 1,
                             format: "%.0f",
                             unit: "s"
-                        ) { _ in
+                        ) { isEditing in
                             trimEnd = max(trimEnd, trimStart)
+                            if isEditing {
+                                // Live scrubbing - seek while dragging
+                                seekToTime(trimEnd, pause: true)
+                            } else {
+                                // Final seek when done
+                                seekToTime(trimEnd, pause: true)
+                            }
                         }
                         
                         HStack(spacing: 20) {
@@ -604,6 +641,7 @@ struct ContentView: View {
         }
         .onDisappear {
             player?.pause()
+            isPlaying = false
             // Remove notification observers
             NotificationCenter.default.removeObserver(self)
         }
@@ -706,6 +744,10 @@ struct ContentView: View {
             
             // Start playback automatically
             player?.play()
+            isPlaying = true
+            
+            // Add playback observers
+            addPlaybackObservers(to: item)
             
             // Auto-fit the video when loaded
             await autoFitVideo()
@@ -817,6 +859,53 @@ struct ContentView: View {
             exportProgressText = "Failed: \(error.localizedDescription)"
         }
         exporting = false
+    }
+    
+    private func togglePlayPause() {
+        guard let player = player else { return }
+        
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+        } else {
+            player.play()
+            isPlaying = true
+        }
+    }
+    
+    private func seekToTime(_ time: Double, pause: Bool = true) {
+        guard let player = player else { return }
+        
+        let cmTime = CMTime(seconds: time, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { completed in
+            if completed && pause {
+                // Pause after seeking to let user see the exact frame
+                DispatchQueue.main.async {
+                    self.player?.pause()
+                    self.isPlaying = false
+                }
+            }
+        }
+    }
+    
+    private func addPlaybackObservers(to item: AVPlayerItem) {
+        // Observe when video finishes playing
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { _ in
+            self.isPlaying = false
+        }
+        
+        // Observe playback state changes
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled,
+            object: item,
+            queue: .main
+        ) { _ in
+            self.isPlaying = false
+        }
     }
 
 }
