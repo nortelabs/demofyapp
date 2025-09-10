@@ -18,11 +18,12 @@ struct ContentView: View {
     @State private var frameImage: NSImage?
     @State private var screenRect: ScreenRect = framePresets.first(where: { $0.key == .iphone16plusBlack })?.defaultScreen ?? framePresets.first!.defaultScreen
     @State private var showGuides: Bool = false
+    @State private var use3DFrame: Bool = false
 
     @State private var scale: Double = 100 // percent - 100% for proper fitting
     @State private var offsetX: Double = 0 // -100..100
     @State private var offsetY: Double = 0 // -100..100
-    @State private var videoFitMode: VideoFitMode = .fit
+    @State private var videoFitMode: VideoFitMode = .fill
 
     @State private var duration: Double = 0
     @State private var trimStart: Double = 0
@@ -94,23 +95,37 @@ struct ContentView: View {
                         GeometryReader { geo in
                             let aspect = stageAspectRatio
                             ZStack {
-                                VideoFramePreview(
-                                    player: player,
-                                    overlayImage: frameImage,
-                                    screen: screenRect,
-                                    scale: scale,
-                                    offsetX: offsetX,
-                                    offsetY: offsetY,
-                                    showGuides: showGuides,
-                                    videoFitMode: videoFitMode
-                                )
-                                .frame(width: geo.size.width - 40, height: geo.size.height - 40)
-                                .cornerRadius(12)
-                                .shadow(color: Color.primaryBrand.opacity(0.2), radius: 12, x: 0, y: 6)
-                                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                                if use3DFrame {
+                                    Device3DPreview(
+                                        player: player,
+                                        image: nil,
+                                        modelBaseName: "Frames/iphone_16_black_frame",
+                                        backgroundColor: .clear,
+                                        allowsCameraControl: true
+                                    )
+                                    .frame(width: geo.size.width - 40, height: geo.size.height - 40)
+                                    .cornerRadius(12)
+                                    .shadow(color: Color.primaryBrand.opacity(0.2), radius: 12, x: 0, y: 6)
+                                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                                } else {
+                                    VideoFramePreview(
+                                        player: player,
+                                        overlayImage: frameImage,
+                                        screen: screenRect,
+                                        scale: scale,
+                                        offsetX: offsetX,
+                                        offsetY: offsetY,
+                                        showGuides: showGuides,
+                                        videoFitMode: videoFitMode
+                                    )
+                                    .frame(width: geo.size.width - 40, height: geo.size.height - 40)
+                                    .cornerRadius(12)
+                                    .shadow(color: Color.primaryBrand.opacity(0.2), radius: 12, x: 0, y: 6)
+                                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                                }
                                 
                                 // Enhanced empty state
-                                if frameImage == nil {
+                                if frameImage == nil && !use3DFrame {
                                     VStack(spacing: 20) {
                                         ZStack {
                                             Circle()
@@ -442,7 +457,7 @@ struct ContentView: View {
                                 Button {
                                     if let url = askOpenURL(allowed: [.png]) {
                                         frameImageURL = url
-                                        frameImage = NSImage(contentsOf: url)
+                                        frameImage = NSImage(contentsOf: url)?.trimmingTransparentPixels()
                                         framePreset = .custom
                                         Task { await updateStageAspect() }
                                     }
@@ -450,6 +465,13 @@ struct ContentView: View {
                                     Label("Custom Frame", systemImage: "photo") 
                                 }
                                 .modernButton(.secondary, size: .medium)
+                            }
+
+                            LabeledControl("3D Mode") {
+                                Toggle(isOn: $use3DFrame) {
+                                    Text("Use 3D iPhone model (USDZ)")
+                                }
+                                .toggleStyle(.switch)
                             }
                             
                             LabeledControl("Device Frame") {
@@ -481,14 +503,14 @@ struct ContentView: View {
                                         // Try with the Frames/ prefix first
                                         if let url = Bundle.main.url(forResource: name, withExtension: "png") {
                                             frameImageURL = url
-                                            frameImage = NSImage(contentsOf: url)
+                                            frameImage = NSImage(contentsOf: url)?.trimmingTransparentPixels()
                                             Task { await updateStageAspect() }
                                         } else {
                                             // Try without the Frames/ prefix
                                             let nameWithoutPrefix = name.replacingOccurrences(of: "Frames/", with: "")
                                             if let url = Bundle.main.url(forResource: nameWithoutPrefix, withExtension: "png") {
                                                 frameImageURL = url
-                                                frameImage = NSImage(contentsOf: url)
+                                                frameImage = NSImage(contentsOf: url)?.trimmingTransparentPixels()
                                                 Task { await updateStageAspect() }
                                             }
                                         }
@@ -496,39 +518,24 @@ struct ContentView: View {
                                         // keep current custom image
                                     }
                                 }
+                                .disabled(use3DFrame)
                             }
                             
-                            LabeledControl("Video Fit") {
-                                VStack(spacing: 12) {
-                                    Picker("Video Fit Mode", selection: $videoFitMode) {
-                                        ForEach(VideoFitMode.allCases) { mode in
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(mode.label)
-                                                    .font(.body)
-                                                Text(mode.description)
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                            .tag(mode)
-                                        }
+                            LabeledControl("Video Controls") {
+                                HStack(spacing: 8) {
+                                    Button("Fit to Frame") {
+                                        Task { await autoFitVideo() }
                                     }
-                                    .pickerStyle(.menu)
+                                    .modernButton(.secondary, size: .small)
+                                    .disabled(videoURL == nil)
                                     
-                                    HStack(spacing: 8) {
-                                        Button("Fit to Frame") {
-                                            Task { await autoFitVideo() }
-                                        }
-                                        .modernButton(.secondary, size: .small)
-                                        .disabled(videoURL == nil)
-                                        
-                                        Button("Reset") {
-                                            scale = 100
-                                            offsetX = 0
-                                            offsetY = 0
-                                        }
-                                        .modernButton(.ghost, size: .small)
-                                        .disabled(videoURL == nil)
+                                    Button("Reset") {
+                                        scale = 100
+                                        offsetX = 0
+                                        offsetY = 0
                                     }
+                                    .modernButton(.ghost, size: .small)
+                                    .disabled(videoURL == nil)
                                 }
                             }
                         }
@@ -680,136 +687,116 @@ struct ContentView: View {
     }
 
     private func loadVideo(from url: URL?) async {
-        guard let url else { return }
-        
-        // Check if file exists and is accessible
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            print("Video file does not exist at path: \(url.path)")
-            return
-        }
-        
-        // Check file permissions
-        guard FileManager.default.isReadableFile(atPath: url.path) else {
-            print("Video file is not readable at path: \(url.path)")
-            return
-        }
-        
-        videoURL = url
-        let asset = AVURLAsset(url: url)
-        
-        do {
-            // Load basic asset properties first
-            let isPlayable = try await asset.load(.isPlayable)
-            guard isPlayable else {
-                print("Video asset is not playable")
-                return
-            }
-            
-            let hasVideoTracks = try await asset.loadTracks(withMediaType: .video)
-            guard !hasVideoTracks.isEmpty else {
-                print("Video asset has no video tracks")
-                return
-            }
-            
-            // Load duration
-            let newDuration = try await asset.load(.duration).seconds
-            duration = newDuration.isFinite ? newDuration : 0
-            trimStart = 0
-            trimEnd = duration
-            
-            // Create player item and player
-            let item = AVPlayerItem(asset: asset)
-            player = AVPlayer(playerItem: item)
-            
-            // Add error observation
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemFailedToPlayToEndTime,
-                object: item,
-                queue: .main
-            ) { notification in
-                if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-                    print("Player failed to play to end time: \(error.localizedDescription)")
-                }
-            }
-            
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemNewErrorLogEntry,
-                object: item,
-                queue: .main
-            ) { notification in
-                if let errorLog = notification.object as? AVPlayerItemErrorLog {
-                    print("Player error log entry: \(errorLog)")
-                }
-            }
-            
-            // Start playback automatically
-            player?.play()
-            isPlaying = true
-            
-            // Add playback observers
-            addPlaybackObservers(to: item)
-            
-            // Auto-fit the video when loaded
-            await autoFitVideo()
-            Task { await updateStageAspect() }
-            
-            // Force a UI update to ensure the video gravity is applied
-            DispatchQueue.main.async {
-                // Trigger a view update
-                self.videoFitMode = self.videoFitMode
-            }
-        } catch {
-            print("Failed to load video: \(error.localizedDescription)")
-            print("Error details: \(error)")
-        }
+    guard let url else { return }
+    
+    guard FileManager.default.fileExists(atPath: url.path) else {
+        print("Video file does not exist at path: \(url.path)")
+        return
+    }
+    guard FileManager.default.isReadableFile(atPath: url.path) else {
+        print("Video file is not readable at path: \(url.path)")
+        return
     }
     
-    private func autoFitVideo() async {
-        guard let player, let asset = player.currentItem?.asset else { return }
-        
-        do {
-            guard let track = try await asset.loadTracks(withMediaType: .video).first else { return }
-            let (naturalSize, transform) = try await track.load(.naturalSize, .preferredTransform)
-            let videoSize = naturalSize.applying(transform)
-            let videoAspectRatio = abs(videoSize.width / videoSize.height)
-            
-            // Calculate screen area aspect ratio
-            let screenAspectRatio = (screenRect.w / 100.0) / (screenRect.h / 100.0)
-            
-            // Calculate optimal scale for fitting based on video fit mode
-            let fitScale: Double
-            switch videoFitMode {
-            case .fit:
-                // For fit mode, calculate scale to show entire video
-                if videoAspectRatio > screenAspectRatio {
-                    // Video is wider than screen - fit to width
-                    fitScale = 100.0
-                } else {
-                    // Video is taller than screen - fit to height  
-                    fitScale = 100.0
-                }
-            case .fill:
-                // For fill mode, calculate scale to fill screen
-                if videoAspectRatio > screenAspectRatio {
-                    // Video is wider than screen - fit to height
-                    fitScale = 100.0
-                } else {
-                    // Video is taller than screen - fit to width
-                    fitScale = 100.0
-                }
-            case .stretch:
-                // For stretch mode, no scaling needed
-                fitScale = 100.0
-            }
-            
-            // Apply the fit scale
-            scale = fitScale
-            offsetX = 0
-            offsetY = 0
-            
-        } catch {
-            print("Failed to auto-fit video: \(error)")
+    videoURL = url
+    let asset = AVURLAsset(url: url)
+    
+    do {
+        let isPlayable = try await asset.load(.isPlayable)
+        guard isPlayable else {
+            print("Video asset is not playable")
+            return
         }
+        
+        let hasVideoTracks = try await asset.loadTracks(withMediaType: .video)
+        guard !hasVideoTracks.isEmpty else {
+            print("Video asset has no video tracks")
+            return
+        }
+        
+        let newDuration = try await asset.load(.duration).seconds
+        duration = newDuration.isFinite ? newDuration : 0
+        trimStart = 0
+        trimEnd = duration
+        
+        // ✅ Orientation-corrected AVPlayerItem
+        let item: AVPlayerItem
+        do {
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            if let videoTrack = videoTracks.first {
+                let transform = try await videoTrack.load(.preferredTransform)
+                let naturalSize = try await videoTrack.load(.naturalSize)
+                let correctedSize = naturalSize.applying(transform)
+                let renderSize = CGSize(width: abs(correctedSize.width), height: abs(correctedSize.height))
+                
+                let instruction = AVMutableVideoCompositionInstruction()
+                instruction.timeRange = CMTimeRange(start: .zero, duration: try await asset.load(.duration))
+                
+                let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
+                layerInstruction.setTransform(transform, at: .zero)
+                instruction.layerInstructions = [layerInstruction]
+                
+                let videoComposition = AVMutableVideoComposition()
+                videoComposition.instructions = [instruction]
+                videoComposition.renderSize = renderSize
+                videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+                
+                item = AVPlayerItem(asset: asset)
+                item.videoComposition = videoComposition
+            } else {
+                item = AVPlayerItem(asset: asset)
+            }
+        } catch {
+            print("Warning: couldn't build oriented videoComposition — falling back to raw item:", error)
+            item = AVPlayerItem(asset: asset)
+        }
+        
+        player = AVPlayer(playerItem: item)
+        
+        // Observers
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { notification in
+            if let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
+                print("Player failed: \(error.localizedDescription)")
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemNewErrorLogEntry,
+            object: item,
+            queue: .main
+        ) { notification in
+            if let errorLog = notification.object as? AVPlayerItemErrorLog {
+                print("Player error log: \(errorLog)")
+            }
+        }
+        
+        player?.play()
+        isPlaying = true
+        
+        addPlaybackObservers(to: item)
+        
+        await autoFitVideo()
+        Task { await updateStageAspect() }
+        
+        DispatchQueue.main.async {
+            self.videoFitMode = self.videoFitMode
+        }
+    } catch {
+        print("Failed to load video: \(error.localizedDescription)")
+        print("Error details: \(error)")
+    }
+}
+
+    
+    private func autoFitVideo() async {
+        // Reset to default fitting - the video layer will handle the fitting automatically
+        // based on the videoGravity setting in VideoFramePreview
+        scale = 100.0
+        offsetX = 0
+        offsetY = 0
     }
 
     private func askOpenURL(allowed: [UTType]) -> URL? {

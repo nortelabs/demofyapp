@@ -64,6 +64,52 @@ struct ModernGroupBoxStyle: GroupBoxStyle {
     }
 }
 
+extension NSImage {
+    func trimmingTransparentPixels() -> NSImage? {
+        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: bitmapInfo),
+              let data = context.data?.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel) else {
+            return nil
+        }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        var top = height
+        var bottom = 0
+        var left = width
+        var right = 0
+        
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * bytesPerPixel
+                if data[offset + 3] != 0 { // Check alpha channel
+                    if x < left { left = x }
+                    if x > right { right = x }
+                    if y < top { top = y }
+                    if y > bottom { bottom = y }
+                }
+            }
+        }
+        
+        if left > right || top > bottom {
+            return nil // Image is fully transparent
+        }
+        
+        let cropRect = CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
+        guard let croppedCgImage = cgImage.cropping(to: cropRect) else { return nil }
+        
+        return NSImage(cgImage: croppedCgImage, size: cropRect.size)
+    }
+}
+
 struct ModernButtonStyle: ButtonStyle {
     let variant: Variant
     let size: Size

@@ -7,6 +7,7 @@ import AVKit
 struct VideoFramePreview: NSViewRepresentable {
     final class PreviewView: NSView {
         let containerLayer = CALayer()
+        let videoContainerLayer = CALayer()
         let playerLayer = AVPlayerLayer()
         let overlayLayer = CALayer()
         let guidesLayer = CALayer()
@@ -22,12 +23,15 @@ struct VideoFramePreview: NSViewRepresentable {
             guidesLayer.masksToBounds = false
             guidesLayer.backgroundColor = .none
 
+            videoContainerLayer.masksToBounds = true
+            videoContainerLayer.backgroundColor = .clear
+
             playerLayer.videoGravity = .resizeAspect
             playerLayer.backgroundColor = NSColor.clear.cgColor
-            playerLayer.masksToBounds = true
 
-            layer?.addSublayer(playerLayer) // we'll size/transform it inside screen window
-            layer?.addSublayer(overlayLayer) // overlay (frame) should be on top
+            videoContainerLayer.addSublayer(playerLayer)
+            layer?.addSublayer(videoContainerLayer)
+            layer?.addSublayer(overlayLayer)
             layer?.addSublayer(guidesLayer)
         }
 
@@ -106,73 +110,52 @@ struct VideoFramePreview: NSViewRepresentable {
         let sh = CGFloat(screen.h / 100.0) * bounds.height
         let screenRect = CGRect(x: sx, y: sy, width: sw, height: sh)
 
-        // Set video gravity based on fit mode first
+        v.videoContainerLayer.frame = screenRect
+        v.videoContainerLayer.zPosition = 0
+
         switch videoFitMode {
         case .fit:
             v.playerLayer.videoGravity = .resizeAspect
-            v.playerLayer.masksToBounds = true
         case .fill:
             v.playerLayer.videoGravity = .resizeAspectFill
-            v.playerLayer.masksToBounds = true
         case .stretch:
             v.playerLayer.videoGravity = .resize
-            v.playerLayer.masksToBounds = true
         }
-        
-        // Set player layer to fill the screen rect with proper masking
-        v.playerLayer.frame = screenRect
-        v.playerLayer.zPosition = 0 // Ensure player is behind overlay
-        v.playerLayer.masksToBounds = true // Critical: ensure content stays within bounds
 
-        // Calculate zoom level (1.0 = fit, >1.0 = zoom in)
-        let zoom = max(0.1, scale / 100.0)
-        
-        // Calculate offsets relative to screen size
-        let dx = (offsetX / 100.0) * (screenRect.width / 2.0)
-        let dy = (offsetY / 100.0) * (screenRect.height / 2.0)
-        
-        // Apply transform to position and scale the video within the screen rect
-        // Center the video within the screen rect
-        v.playerLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        v.playerLayer.position = CGPoint(x: screenRect.midX, y: screenRect.midY)
-        
-        // Ensure the layer is properly configured for video display
-        v.playerLayer.backgroundColor = NSColor.clear.cgColor
-        
-        // Ensure the player layer is visible when there's a player
+        v.playerLayer.frame = v.videoContainerLayer.bounds
+
         if player != nil {
             v.playerLayer.isHidden = false
             v.playerLayer.opacity = 1.0
         } else {
             v.playerLayer.isHidden = true
         }
-        
-        // Apply transform for zoom and offset only if not at default values
-        // For zoom: 1.0 = normal size, >1.0 = zoom in, <1.0 = zoom out
+
+        let zoom = max(0.1, scale / 100.0)
+        let dx = (offsetX / 100.0) * (v.playerLayer.bounds.width / 4.0)
+        let dy = (offsetY / 100.0) * (v.playerLayer.bounds.height / 4.0)
+
         if zoom != 1.0 || dx != 0 || dy != 0 {
+            v.playerLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            v.playerLayer.position = CGPoint(x: v.videoContainerLayer.bounds.midX, y: v.videoContainerLayer.bounds.midY)
             var t = CATransform3DIdentity
-            t = CATransform3DTranslate(t, dx, -dy, 0) // Invert dy to match coordinate system
-            t = CATransform3DScale(t, zoom, zoom, 1) // Direct zoom scaling
+            t = CATransform3DTranslate(t, dx, -dy, 0)
+            t = CATransform3DScale(t, zoom, zoom, 1)
             v.playerLayer.transform = t
         } else {
-            // Reset transform to identity for default fitting
             v.playerLayer.transform = CATransform3DIdentity
         }
-        
-        // Modern rounded corners for the screen with enhanced styling
-        let cornerRadius = min(screenRect.width, screenRect.height) * 0.035
-        v.playerLayer.cornerRadius = cornerRadius
-        
-        // Add subtle border glow effect
-        v.playerLayer.borderWidth = 1
-        v.playerLayer.borderColor = NSColor.systemBlue.withAlphaComponent(0.2).cgColor
 
-        // Guides
+        let cornerRadius = min(screenRect.width, screenRect.height) * 0.12
+        v.videoContainerLayer.cornerRadius = cornerRadius
+        v.videoContainerLayer.borderWidth = 0
+        v.videoContainerLayer.borderColor = NSColor.clear.cgColor
+
         v.guidesLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
         if showGuides {
             let guide = CAShapeLayer()
             guide.frame = bounds
-            let path = NSBezierPath(roundedRect: screenRect, xRadius: v.playerLayer.cornerRadius, yRadius: v.playerLayer.cornerRadius)
+            let path = NSBezierPath(roundedRect: screenRect, xRadius: v.videoContainerLayer.cornerRadius, yRadius: v.videoContainerLayer.cornerRadius)
             guide.path = path.cgPath
             guide.fillColor = NSColor.clear.cgColor
             guide.strokeColor = NSColor.systemGreen.withAlphaComponent(0.9).cgColor
