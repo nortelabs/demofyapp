@@ -29,11 +29,15 @@ struct Device3DPreview: NSViewRepresentable {
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView(frame: .zero)
-        scnView.backgroundColor = NSColor(calibratedWhite: 0.95, alpha: 1.0)
+        // Honor requested background color across view, layer and scene
+        scnView.backgroundColor = backgroundColor
+        scnView.wantsLayer = true
+        scnView.layer?.backgroundColor = backgroundColor.cgColor
         scnView.allowsCameraControl = allowsCameraControl
         scnView.antialiasingMode = .multisampling4X
         scnView.isPlaying = true
         let scene = buildScene()
+        scene.background.contents = backgroundColor
         scnView.scene = scene
         scnView.autoenablesDefaultLighting = false
         scnView.rendersContinuously = true
@@ -73,19 +77,26 @@ struct Device3DPreview: NSViewRepresentable {
     func updateNSView(_ nsView: SCNView, context: Context) {
         // Update media mapping on changes
         updateScreenMaterial(in: nsView.scene, with: player, image: image)
+        // Keep background in sync if toggled
+        nsView.backgroundColor = backgroundColor
+        nsView.layer?.backgroundColor = backgroundColor.cgColor
+        nsView.scene?.background.contents = backgroundColor
     }
 
     // MARK: - Scene Construction
     private func buildScene() -> SCNScene {
         let scene = loadSceneFromBundle()
 
+        // Remove common backdrop/stage meshes that ship inside some USDZs
+        removeLikelyBackdropNodes(in: scene.rootNode)
+
         // Camera
         let cameraNode = SCNNode()
         let camera = SCNCamera()
         camera.fieldOfView = 35
         camera.usesOrthographicProjection = false
-        camera.wantsHDR = true
-        camera.wantsExposureAdaptation = true
+        camera.wantsHDR = false
+        camera.wantsExposureAdaptation = false
         camera.zNear = 0.01
         camera.zFar = 2000
         cameraNode.camera = camera
@@ -126,17 +137,6 @@ struct Device3DPreview: NSViewRepresentable {
         fillLightNode.position = SCNVector3(-0.6, 0.2, 0.6)
         scene.rootNode.addChildNode(fillLightNode)
 
-        // Ground for subtle shadow reception
-        let ground = SCNPlane(width: 5.0, height: 5.0)
-        ground.firstMaterial = SCNMaterial()
-        ground.firstMaterial?.lightingModel = .lambert
-        ground.firstMaterial?.diffuse.contents = NSColor(white: 0.97, alpha: 1.0)
-        ground.firstMaterial?.isDoubleSided = true
-        let groundNode = SCNNode(geometry: ground)
-        groundNode.eulerAngles.x = -SCNFloat.pi / 2
-        groundNode.position = SCNVector3(0, -0.1, 0)
-        scene.rootNode.addChildNode(groundNode)
-
         // Add small RGB axes at origin for visual confirmation
         let xAxis = SCNCylinder(radius: 0.005, height: 0.3)
         xAxis.firstMaterial?.diffuse.contents = NSColor.systemRed
@@ -172,7 +172,68 @@ struct Device3DPreview: NSViewRepresentable {
             scene.rootNode.addChildNode(boxNode)
         }
 
+        // Ensure no environment/skybox imposes a backdrop tint
+        scene.lightingEnvironment.contents = nil
+        scene.lightingEnvironment.intensity = 0
+        scene.background.contents = backgroundColor
+
         return scene
+    }
+
+    // Hide meshes that look like a huge flat backdrop/floor/stage so we see the view background
+    private func removeLikelyBackdropNodes(in root: SCNNode) {
+        // Compute overall scene bounds in world space
+        var minScene = SCNVector3(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
+        var maxScene = SCNVector3(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
+        root.enumerateHierarchy { node, _ in
+            guard node.geometry != nil else { return }
+            let (bbMin, bbMax) = node.boundingBox
+            let corners: [SCNVector3] = [
+                SCNVector3(bbMin.x, bbMin.y, bbMin.z), SCNVector3(bbMax.x, bbMin.y, bbMin.z),
+                SCNVector3(bbMin.x, bbMax.y, bbMin.z), SCNVector3(bbMax.x, bbMax.y, bbMin.z),
+                SCNVector3(bbMin.x, bbMin.y, bbMax.z), SCNVector3(bbMax.x, bbMin.y, bbMax.z),
+                SCNVector3(bbMin.x, bbMax.y, bbMax.z), SCNVector3(bbMax.x, bbMax.y, bbMax.z)
+            ]
+            for c in corners {
+                let wp = node.convertPosition(c, to: nil)
+                minScene.x = min(minScene.x, wp.x); minScene.y = min(minScene.y, wp.y); minScene.z = min(minScene.z, wp.z)
+                maxScene.x = max(maxScene.x, wp.x); maxScene.y = max(maxScene.y, wp.y); maxScene.z = max(maxScene.z, wp.z)
+            }
+        }
+        let sceneW = Double(maxScene.x - minScene.x)
+        let sceneH = Double(maxScene.y - minScene.y)
+        let sceneArea = max(1e-6, sceneW * sceneH)
+
+        var nodesToHide: [SCNNode] = []
+        root.enumerateHierarchy { node, _ in
+            guard let geom = node.geometry else { return }
+            let name = (node.name ?? "") + " " + (geom.name ?? "") + " " + (geom.firstMaterial?.name ?? "")
+            let lower = name.lowercased()
+
+            // Keep anything that sounds like part of the phone/device
+            if lower.contains("screen") || lower.contains("display") || lower.contains("glass") ||
+                lower.contains("iphone") || lower.contains("phone") || lower.contains("device") ||
+                lower.contains("frame") || lower.contains("body") { return }
+
+            // Name-based removal for obvious backdrops
+            if lower.contains("background") || lower.contains("backdrop") || lower.contains("stage") || lower.contains("floor") || lower.contains("infinite") || lower.contains("cyclorama") {
+                nodesToHide.append(node); return
+            }
+
+            // Heuristic removal: extremely thin, extremely large plane covering most of the scene
+            let (minV, maxV) = node.boundingBox
+            let w = Double(maxV.x - minV.x)
+            let h = Double(maxV.y - minV.y)
+            let d = Double(maxV.z - minV.z)
+            guard w.isFinite && h.isFinite && d.isFinite else { return }
+            let area = w * h
+            let areaRatio = area / sceneArea
+            let isExtremelyThin = d < min(w, h) * 0.005
+            if areaRatio > 0.85 && isExtremelyThin {
+                nodesToHide.append(node)
+            }
+        }
+        nodesToHide.forEach { $0.isHidden = true }
     }
 
     private func loadSceneFromBundle() -> SCNScene {

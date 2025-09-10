@@ -84,7 +84,7 @@ struct ContentView: View {
                     ZStack {
                         // Modern glass background
                         RoundedRectangle(cornerRadius: 20)
-                            .fill(.regularMaterial)
+                            .fill(Color(NSColor.white))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 20)
                                     .stroke(Color.primaryBrand.opacity(0.3), lineWidth: 2)
@@ -100,7 +100,7 @@ struct ContentView: View {
                                         player: player,
                                         image: nil,
                                         modelBaseName: "Frames/iphone_16_black_frame",
-                                        backgroundColor: .clear,
+                                        backgroundColor: .white,
                                         allowsCameraControl: true
                                     )
                                     .frame(width: geo.size.width - 40, height: geo.size.height - 40)

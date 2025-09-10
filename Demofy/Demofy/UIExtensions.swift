@@ -14,7 +14,7 @@ extension Color {
     static let accentBrand = brandYellow
     
     // System colors
-    static let background = Color(NSColor.controlBackgroundColor)
+    static let background = Color.brandWhite
     static let cardBackground = Color(NSColor.controlBackgroundColor)
     static let accent = primaryBrand
     static let secondaryText = Color.secondary
