@@ -22,6 +22,13 @@ struct Device3DPreview: NSViewRepresentable {
     var allowsCameraControl: Bool = true
     var debugLogHierarchy: Bool = true
 
+    // Reports whether a screen node could be mapped in the 3D model
+    var onMappingStatus: ((Bool) -> Void)? = nil
+
+    // Optional overlay screen rect (percent-based) used to synthesize a screen plane
+    // when the USDZ model does not contain a distinct screen mesh.
+    var overlayScreenRect: ScreenRect = .init(x: 6.5, y: 3.0, w: 87.0, h: 94.0)
+
     // MARK: - NSViewRepresentable
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -253,14 +260,24 @@ struct Device3DPreview: NSViewRepresentable {
             print("[Device3DPreview] Loaded model: \(url.lastPathComponent)")
             return scene
         }
-        // Empty fallback
-        print("[Device3DPreview] Model not found in bundle for base name: \(modelBaseName). Showing placeholder.")
+        // Empty fallback with detailed error logging
+        print("⚠️  [Device3DPreview] 3D Model files not found in app bundle!")
+        print("    Searched for: \(modelBaseName).{usdz,scn,glb}")
+        print("    This causes the 'fopen failed for data file: errno = 2' error.")
+        print("    Solution: Add the 3D model files to your Xcode project target:")
+        print("    1. In Xcode, right-click your project in the navigator")
+        print("    2. Choose 'Add Files to [ProjectName]'")
+        print("    3. Select the .usdz and .scn files from Demofy/Frames/")
+        print("    4. Make sure 'Add to target' is checked for your app target")
+        print("    5. Clean and rebuild the project")
+        
         let scene = SCNScene()
-        let placeholder = SCNText(string: "Model not found", extrusionDepth: 0.5)
-        placeholder.firstMaterial?.diffuse.contents = NSColor.systemRed
+        let placeholder = SCNText(string: "3D Model Missing\nAdd .usdz/.scn files\nto Xcode project", extrusionDepth: 0.02)
+        placeholder.firstMaterial?.diffuse.contents = NSColor.systemOrange
+        placeholder.font = NSFont.systemFont(ofSize: 12)
         let textNode = SCNNode(geometry: placeholder)
-        textNode.scale = SCNVector3(0.01, 0.01, 0.01)
-        textNode.position = SCNVector3(-1.5, 0, 0)
+        textNode.scale = SCNVector3(0.008, 0.008, 0.008)
+        textNode.position = SCNVector3(-0.8, 0, 0)
         scene.rootNode.addChildNode(textNode)
         return scene
     }
@@ -348,10 +365,19 @@ struct Device3DPreview: NSViewRepresentable {
     // MARK: - Material Mapping
     private func updateScreenMaterial(in scene: SCNScene?, with player: AVPlayer?, image: NSImage?) {
         guard let scene else { return }
-        guard let screenNode = findScreenNode(in: scene.rootNode) else {
-            print("[Device3DPreview] Screen node not found; using autodetect fallback.")
-            return
+        // Try to find an existing screen node
+        var screenNode = findScreenNode(in: scene.rootNode)
+        // If not found, synthesize an overlay plane positioned over the device front
+        if screenNode == nil {
+            if let overlay = ensureOverlayScreenNode(in: scene.rootNode) {
+                screenNode = overlay
+            } else {
+                print("[Device3DPreview] Screen node not found and could not create overlay plane.")
+                onMappingStatus?(false)
+                return
+            }
         }
+        guard let screenNode else { onMappingStatus?(false); return }
         guard let geom = screenNode.geometry else { return }
 
         let material = geom.firstMaterial ?? SCNMaterial()
@@ -381,6 +407,53 @@ struct Device3DPreview: NSViewRepresentable {
         }
 
         screenNode.geometry?.firstMaterial = material
+        onMappingStatus?(true)
+    }
+
+    // Create or update a front-facing plane to act as the screen when a mesh isn't provided
+    private func ensureOverlayScreenNode(in root: SCNNode) -> SCNNode? {
+        let overlayName = "DemofyScreenOverlay"
+        if let existing = root.childNode(withName: overlayName, recursively: true) {
+            // Geometry and material will be updated by updateScreenMaterial
+            return existing
+        }
+
+        guard let deviceNode = findDeviceNode(in: root) else { return nil }
+        let (minV, maxV) = deviceNode.boundingBox
+        let width = CGFloat(maxV.x - minV.x)
+        let height = CGFloat(maxV.y - minV.y)
+        let depth = CGFloat(maxV.z - minV.z)
+        guard width.isFinite && height.isFinite && depth.isFinite && width > 0 && height > 0 else { return nil }
+
+        // Convert percent-based rect to local coordinates within the device bounds
+        let px = CGFloat(overlayScreenRect.x / 100.0)
+        let py = CGFloat(overlayScreenRect.y / 100.0)
+        let pw = CGFloat(overlayScreenRect.w / 100.0)
+        let ph = CGFloat(overlayScreenRect.h / 100.0)
+
+        let planeW = max(1e-4, width * pw)
+        let planeH = max(1e-4, height * ph)
+        let centerX = CGFloat(minV.x) + width * (px + pw * 0.5)
+        let centerY = CGFloat(minV.y) + height * (py + ph * 0.5)
+        // Assume front is +Z. Place slightly in front of the device front to avoid z-fighting
+        let z = CGFloat(maxV.z) + max(1e-4, depth) * 0.001
+
+        let plane = SCNPlane(width: planeW, height: planeH)
+        let mat = SCNMaterial()
+        mat.isDoubleSided = false
+        mat.lightingModel = .constant
+        mat.diffuse.contents = NSColor.black
+        mat.emission.intensity = 1.0
+        plane.firstMaterial = mat
+
+        let node = SCNNode(geometry: plane)
+        node.name = overlayName
+        node.position = SCNVector3(Float(centerX), Float(centerY), Float(z))
+        // Ensure it faces the camera (positive Z)
+        node.eulerAngles = SCNVector3Zero
+
+        deviceNode.addChildNode(node)
+        return node
     }
 
     // Find the node named like "screen". If not found, attempt fuzzy match on geometry/material names.
@@ -449,8 +522,9 @@ struct Device3DPreview: NSViewRepresentable {
         videoNode.position = CGPoint(x: sceneSize.width / 2, y: sceneSize.height / 2)
         videoNode.yScale = -1 // SpriteKit flipped Y when used as texture
         skScene.addChild(videoNode)
-        // Ensure playback
+        // Ensure playback on both the AVPlayer and the SKVideoNode
         player.play()
+        videoNode.play()
         return skScene
     }
 
