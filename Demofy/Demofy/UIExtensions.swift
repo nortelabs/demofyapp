@@ -1,26 +1,28 @@
 import SwiftUI
 
-// MARK: - Clean Color Palette
+// MARK: - Updated Color Palette
 extension Color {
-    // Coolors palette: https://coolors.co/db7536-ffcc00-000000-ffffff
-    static let brandOrange = Color(red: 0.859, green: 0.459, blue: 0.212) // #DB7536
-    static let brandYellow = Color(red: 1.0, green: 0.8, blue: 0.0)       // #FFCC00
-    static let brandBlack = Color(red: 0.0, green: 0.0, blue: 0.0)        // #000000
-    static let brandWhite = Color(red: 1.0, green: 1.0, blue: 1.0)        // #FFFFFF
+    // New color palette: Black, Oxford Blue, Orange Web, Platinum, White
+    static let brandBlack = Color(red: 0.0, green: 0.0, blue: 0.0)                    // #000000
+    static let oxfordBlue = Color(red: 0.078, green: 0.129, blue: 0.239)             // #14213D
+    static let orangeWeb = Color(red: 0.988, green: 0.639, blue: 0.067)              // #FCA311
+    static let platinum = Color(red: 0.898, green: 0.898, blue: 0.898)               // #E5E5E5
+    static let brandWhite = Color(red: 1.0, green: 1.0, blue: 1.0)                  // #FFFFFF
     
-    // Semantic colors using the clean palette
-    static let primaryBrand = brandOrange
-    static let secondaryBrand = brandYellow
-    static let accentBrand = brandYellow
+    // Semantic colors using the new palette
+    static let primaryBrand = orangeWeb
+    static let secondaryBrand = oxfordBlue
+    static let accentBrand = orangeWeb
     
-    // System colors
-    static let background = Color.brandWhite
+    // System colors using new palette with dark mode support
+    static let background = Color(NSColor.controlBackgroundColor)
     static let cardBackground = Color(NSColor.controlBackgroundColor)
+    static let previewBackground = Color(NSColor.windowBackgroundColor)
     static let accent = primaryBrand
     static let secondaryText = Color.secondary
     static let border = Color(NSColor.separatorColor)
     static let success = Color.green
-    static let warning = brandYellow
+    static let warning = orangeWeb
     static let destructive = Color.red
 }
 
