@@ -4,8 +4,56 @@ final class SimulatorRecorder {
     private var process: Process?
     private var outputURL: URL?
 
-    func startRecording(saveTo url: URL, device: String = "booted") throws {
+    // Auto-detect running iOS simulators
+    func getRunningSimulators() -> [String] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = ["simctl", "list", "devices", "available"]
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            
+            // Parse for booted devices
+            var runningDevices: [String] = []
+            let lines = output.components(separatedBy: .newlines)
+            
+            for line in lines {
+                if line.contains("(Booted)") {
+                    // Extract device ID from line like: "iPhone 15 (12345678-1234-1234-1234-123456789012) (Booted)"
+                    if let range = line.range(of: "\\([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}\\)", options: .regularExpression) {
+                        var deviceId = String(line[range])
+                        deviceId = String(deviceId.dropFirst().dropLast()) // Remove parentheses
+                        runningDevices.append(deviceId)
+                    }
+                }
+            }
+            
+            return runningDevices
+        } catch {
+            print("Failed to get running simulators: \(error)")
+            return []
+        }
+    }
+    
+    // Get the first running simulator or "booted"
+    func getDefaultDevice() -> String {
+        let runningSimulators = getRunningSimulators()
+        return runningSimulators.first ?? "booted"
+    }
+
+    func startRecording(saveTo url: URL, device: String? = nil) throws {
         stopRecording() // ensure not running
+        
+        // Use provided device or auto-detect
+        let targetDevice = device ?? getDefaultDevice()
+        print("🎥 Starting recording for device: \(targetDevice)")
         
         // Ensure the directory exists
         let directory = url.deletingLastPathComponent()
@@ -16,7 +64,7 @@ final class SimulatorRecorder {
         
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        p.arguments = ["simctl", "io", device, "recordVideo", "--codec", "h264", "--force", url.path]
+        p.arguments = ["simctl", "io", targetDevice, "recordVideo", "--codec", "h264", "--force", url.path]
 
         let err = Pipe()
         p.standardError = err

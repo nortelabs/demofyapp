@@ -7,9 +7,11 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     // State
     @AppStorage("isDarkMode") private var isDarkMode = false
+    @AppStorage("customSaveLocationPath") private var customSaveLocationPath: String = ""
     @State private var recordingState: RecordingState = .idle
     @State private var simulatorDevice: String = "booted"
     @State private var recordingURL: URL?
+    @State private var customSaveLocation: URL?
     @State private var videoURL: URL?
     @State private var player: AVPlayer?
 
@@ -43,6 +45,18 @@ struct ContentView: View {
         .background(Color.background.ignoresSafeArea())
         .onAppear {
             // Don't load any frame by default - show popup instead
+            
+            // Auto-detect running iOS simulator
+            let detectedDevice = recorder.getDefaultDevice()
+            if detectedDevice != "booted" {
+                simulatorDevice = detectedDevice
+                print("🔍 Auto-detected simulator device: \(detectedDevice)")
+            }
+            
+            // Load saved custom save location
+            if !customSaveLocationPath.isEmpty {
+                customSaveLocation = URL(fileURLWithPath: customSaveLocationPath)
+            }
         }
         .onDisappear {
             player?.pause()
@@ -178,24 +192,56 @@ struct ContentView: View {
                         .font(.system(.body, design: .monospaced))
                 }
                 
+                LabeledControl("Save Location") {
+                    HStack(spacing: 8) {
+                        if let customLocation = customSaveLocation {
+                            Text(customLocation.lastPathComponent)
+                                .foregroundColor(.primary)
+                                .font(.system(.body, design: .monospaced))
+                                .truncationMode(.middle)
+                            Text("(\(customLocation.deletingLastPathComponent().path))")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                                .truncationMode(.middle)
+                        } else {
+                            Text("Default Location")
+                                .foregroundColor(.secondary)
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        
+                        Spacer()
+                        
+                        Button {
+                            chooseSaveLocation()
+                        } label: {
+                            Label("Choose", systemImage: "folder")
+                        }
+                        .modernButton(.secondary, size: .small)
+                        
+                        if customSaveLocation != nil {
+                            Button {
+                                customSaveLocation = nil
+                                customSaveLocationPath = ""
+                                print("📁 Reset to default save location")
+                            } label: {
+                                Label("Reset", systemImage: "xmark.circle")
+                            }
+                            .modernButton(.ghost, size: .small)
+                        }
+                    }
+                }
+                
                 HStack(spacing: 12) {
                     if recordingState != .recording {
                         Button {
-                            let url = askSaveURL(suggested: "demofy-recording.mp4")
-                            guard let url else { return }
-                            do {
-                                try recorder.startRecording(saveTo: url, device: simulatorDevice)
-                                recordingURL = url
-                                recordingState = .recording
-                            } catch { print("simctl start error:", error) }
+                            startRecording()
                         } label: {
                             Label("Start Recording", systemImage: "record.circle.fill")
                         }
                         .modernButton(.primary, size: .medium)
                     } else {
                         Button {
-                            recorder.stopRecording()
-                            recordingState = .recorded
+                            stopRecording()
                         } label: {
                             Label("Stop Recording", systemImage: "stop.fill")
                         }
@@ -580,6 +626,72 @@ struct ContentView: View {
         p.allowsMultipleSelection = false
         p.canChooseDirectories = false
         return p.runModal() == .OK ? p.url : nil
+    }
+
+    // Choose custom save location
+    private func chooseSaveLocation() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose Save Location"
+        panel.message = "Select a folder where recordings will be saved"
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            customSaveLocation = url
+            customSaveLocationPath = url.path
+            print("📁 Custom save location set to: \(url.path)")
+        }
+    }
+    
+    // Get save location for recordings (custom or default)
+    private func getRecordingSaveURL() -> URL {
+        let baseFolder: URL
+        
+        if let customLocation = customSaveLocation {
+            baseFolder = customLocation
+        } else {
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let demofyFolder = documentsPath.appendingPathComponent("Demofy")
+            try? FileManager.default.createDirectory(at: demofyFolder, withIntermediateDirectories: true)
+            baseFolder = demofyFolder
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let fileName = "demofy-recording_\(dateFormatter.string(from: Date())).mp4"
+        
+        return baseFolder.appendingPathComponent(fileName)
+    }
+    
+    // Start recording with auto-save
+    private func startRecording() {
+        let url = getRecordingSaveURL()
+        let locationDescription = customSaveLocation != nil ? "custom location" : "default location"
+        
+        do {
+            try recorder.startRecording(saveTo: url)
+            recordingURL = url
+            recordingState = .recording
+            print("🎬 Started recording to \(locationDescription): \(url.path)")
+        } catch {
+            print("❌ Failed to start recording: \(error)")
+        }
+    }
+    
+    // Stop recording and auto-load video
+    private func stopRecording() {
+        recorder.stopRecording()
+        recordingState = .recorded
+        
+        // Auto-load the recorded video into preview
+        if let url = recordingURL {
+            Task {
+                await loadVideo(from: url)
+            }
+            print("📹 Recording stopped and loaded into preview")
+        }
     }
 
     private func askSaveURL(suggested: String) -> URL? {
