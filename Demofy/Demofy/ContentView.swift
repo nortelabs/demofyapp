@@ -17,8 +17,6 @@ struct ContentView: View {
     @State private var frameImageURL: URL?
     @State private var frameImage: NSImage?
     @State private var screenRect: ScreenRect = framePresets.first(where: { $0.bundleImageName != nil })?.defaultScreen ?? framePresets.first?.defaultScreen ?? ScreenRect(x: 6.5, y: 3.0, w: 87.0, h: 94.0)
-    @State private var showGuides: Bool = false
-    @State private var use3DFrame: Bool = false
 
     @State private var scale: Double = 100 // percent - 100% for proper fitting
     @State private var offsetX: Double = 0 // -100..100
@@ -31,7 +29,6 @@ struct ContentView: View {
     @State private var isPlaying: Bool = false
 
     @State private var outputFormat: ExportFormat = .mp4
-    @State private var canvas: CGSize = CGSize(width: 1080, height: 1920)
     @State private var exporting = false
     @State private var exportProgressText = ""
 
@@ -51,10 +48,12 @@ struct ContentView: View {
         .onDisappear {
             player?.pause()
             isPlaying = false
-            // Remove notification observers
-            NotificationCenter.default.removeObserver(self)
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime, object: player?.currentItem)) { _ in
+            player?.seek(to: .zero)
+            isPlaying = false
+        }
     }
 
     // MARK: - UI Sections
@@ -131,17 +130,14 @@ struct ContentView: View {
                     .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
                 
                 PreviewStageView(
-                    use3DFrame: use3DFrame,
                     player: player,
                     frameImage: frameImage,
                     screenRect: screenRect,
                     scale: scale,
                     offsetX: offsetX,
                     offsetY: offsetY,
-                    showGuides: showGuides,
                     videoFitMode: videoFitMode,
-                    stageAspectRatio: stageAspectRatio,
-                    on3DMappingFailed: { DispatchQueue.main.async { self.use3DFrame = false } }
+                    stageAspectRatio: stageAspectRatio
                 )
             }
             .frame(minHeight: 450)
@@ -291,13 +287,6 @@ struct ContentView: View {
                     .modernButton(.secondary, size: .medium)
                 }
 
-                LabeledControl("3D Mode") {
-                    Toggle(isOn: $use3DFrame) {
-                        Text("Use 3D iPhone model (USDZ)")
-                    }
-                    .toggleStyle(.switch)
-                }
-                
                 LabeledControl("Device Frame") {
                     Picker("Frame Preset", selection: $framePreset) {
                         ForEach(framePresets) { p in
@@ -356,7 +345,6 @@ struct ContentView: View {
                             // keep current custom image
                         }
                     }
-                    .disabled(use3DFrame)
                 }
 
                 LabeledControl("Frame Tools") {
@@ -366,29 +354,6 @@ struct ContentView: View {
                         }
                         .modernButton(.secondary, size: .small)
                         .disabled(frameImage == nil)
-
-                        Toggle(isOn: $showGuides) {
-                            Text("Show Guides")
-                        }
-                        .toggleStyle(.switch)
-                    }
-                }
-                
-                LabeledControl("Video Controls") {
-                    HStack(spacing: 8) {
-                        Button("Fit to Frame") {
-                            Task { await autoFitVideo() }
-                        }
-                        .modernButton(.secondary, size: .small)
-                        .disabled(videoURL == nil)
-                        
-                        Button("Reset") {
-                            scale = 100
-                            offsetX = 0
-                            offsetY = 0
-                        }
-                        .modernButton(.ghost, size: .small)
-                        .disabled(videoURL == nil)
                     }
                 }
             }
@@ -428,19 +393,6 @@ struct ContentView: View {
                     }
                     
                     Spacer()
-                    
-                    LabeledControl("Resolution") {
-                        HStack(spacing: 8) {
-                            TextField("Width", value: $canvas.widthInt, formatter: NumberFormatter())
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 80)
-                            Text("×")
-                                .foregroundColor(.secondary)
-                            TextField("Height", value: $canvas.heightInt, formatter: NumberFormatter())
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 80)
-                        }
-                    }
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -629,31 +581,6 @@ struct ContentView: View {
             player?.play()
             isPlaying = true
             
-            addPlaybackObservers(to: item)
-            
-            // If no frame has been selected yet, auto-load the current preset frame
-            if frameImage == nil {
-                if let preset = framePresets.first(where: { $0.key == framePreset }) {
-                    screenRect = preset.defaultScreen
-                    if let name = preset.bundleImageName {
-                        if let url = Bundle.main.url(forResource: name, withExtension: "png") {
-                            frameImageURL = url
-                            frameImage = NSImage(contentsOf: url)?.trimmingTransparentPixels()
-                        } else {
-                            let nameWithoutPrefix = name.replacingOccurrences(of: "Frames/", with: "")
-                            if let url = Bundle.main.url(forResource: nameWithoutPrefix, withExtension: "png") {
-                                frameImageURL = url
-                                frameImage = NSImage(contentsOf: url)?.trimmingTransparentPixels()
-                            } else {
-                                print("⚠️  [ContentView] Auto-load frame failed: image not found for preset \(preset.label)")
-                            }
-                        }
-                    }
-                }
-            }
-
-            await autoFitVideo()
-            await updateStageAspect()
         } catch {
             print("Failed to load video: \(error.localizedDescription)")
             print("Error details: \(error)")
@@ -685,7 +612,6 @@ struct ContentView: View {
         guard let img = frameImage else { return }
         if let rect = detectTransparentCenterRegion(in: img) {
             screenRect = rect
-            showGuides = true
         }
     }
 
@@ -781,7 +707,7 @@ struct ContentView: View {
         
         let cfg = DemofyConfig(
             outputFormat: outputFormat.rawValue,
-            canvas: .init(width: Int(canvas.width), height: Int(canvas.height)),
+            canvas: .init(width: 1080, height: 1920),
             trim: .init(start: trimStart, end: trimEnd),
             screenRect: screenRect,
             scale: scale / 100.0,
@@ -844,26 +770,6 @@ struct ContentView: View {
         }
     }
     
-    private func addPlaybackObservers(to item: AVPlayerItem) {
-        // Observe when video finishes playing
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: item,
-            queue: .main
-        ) { _ in
-            self.isPlaying = false
-        }
-        
-        // Observe playback state changes
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemPlaybackStalled,
-            object: item,
-            queue: .main
-        ) { _ in
-            self.isPlaying = false
-        }
-    }
-
 }
 
 private extension CGSize {

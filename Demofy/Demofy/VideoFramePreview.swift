@@ -46,7 +46,6 @@ struct VideoFramePreview: NSViewRepresentable {
     var scale: Double
     var offsetX: Double
     var offsetY: Double
-    var showGuides: Bool
     var videoFitMode: VideoFitMode
 
     func makeNSView(context: Context) -> PreviewView {
@@ -152,17 +151,6 @@ struct VideoFramePreview: NSViewRepresentable {
         v.videoContainerLayer.borderColor = NSColor.clear.cgColor
 
         v.guidesLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
-        if showGuides {
-            let guide = CAShapeLayer()
-            guide.frame = bounds
-            let path = NSBezierPath(roundedRect: screenRect, xRadius: v.videoContainerLayer.cornerRadius, yRadius: v.videoContainerLayer.cornerRadius)
-            guide.path = path.cgPath
-            guide.fillColor = NSColor.clear.cgColor
-            guide.strokeColor = NSColor.systemGreen.withAlphaComponent(0.9).cgColor
-            guide.lineWidth = 2
-            guide.lineDashPattern = [6, 4]
-            v.guidesLayer.addSublayer(guide)
-        }
 
         CATransaction.commit()
     }

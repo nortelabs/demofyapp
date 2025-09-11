@@ -4,57 +4,34 @@ import AVFoundation
 // Extracted to speed up SwiftUI type-checking in ContentView
 struct PreviewStageView: View {
     // Inputs
-    var use3DFrame: Bool
     var player: AVPlayer?
     var frameImage: NSImage?
     var screenRect: ScreenRect
     var scale: Double
     var offsetX: Double
     var offsetY: Double
-    var showGuides: Bool
     var videoFitMode: VideoFitMode
     var stageAspectRatio: CGFloat
-    var on3DMappingFailed: () -> Void
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if use3DFrame {
-                    Device3DPreview(
-                        player: player,
-                        image: nil,
-                        modelBaseName: "Frames/iphone_16_black_frame",
-                        backgroundColor: .white,
-                        allowsCameraControl: true,
-                        debugLogHierarchy: false,
-                        onMappingStatus: { ok in
-                            if !ok { on3DMappingFailed() }
-                        },
-                        overlayScreenRect: screenRect
-                    )
-                    .frame(width: geo.size.width - 40, height: geo.size.height - 40)
-                    .cornerRadius(12)
-                    .shadow(color: Color.primaryBrand.opacity(0.2), radius: 12, x: 0, y: 6)
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-                } else {
-                    VideoFramePreview(
-                        player: player,
-                        overlayImage: frameImage,
-                        screen: screenRect,
-                        scale: scale,
-                        offsetX: offsetX,
-                        offsetY: offsetY,
-                        showGuides: showGuides,
-                        videoFitMode: videoFitMode
-                    )
-                    .frame(width: geo.size.width - 40, height: geo.size.height - 40)
-                    .cornerRadius(12)
-                    .shadow(color: Color.primaryBrand.opacity(0.2), radius: 12, x: 0, y: 6)
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-                }
+                VideoFramePreview(
+                    player: player,
+                    overlayImage: frameImage,
+                    screen: screenRect,
+                    scale: scale,
+                    offsetX: offsetX,
+                    offsetY: offsetY,
+                    videoFitMode: videoFitMode
+                )
+                .frame(width: geo.size.width - 40, height: geo.size.height - 40)
+                .cornerRadius(12)
+                .shadow(color: Color.primaryBrand.opacity(0.2), radius: 12, x: 0, y: 6)
+                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
 
                 // Empty state when nothing is loaded (2D mode only)
-                if frameImage == nil && !use3DFrame && player == nil {
+                if frameImage == nil && player == nil {
                     VStack(spacing: 20) {
                         ZStack {
                             Circle()
