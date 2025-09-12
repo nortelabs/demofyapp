@@ -9,7 +9,7 @@ struct ContentView: View {
     @AppStorage("isDarkMode") private var isDarkMode = false
     @AppStorage("customSaveLocationPath") private var customSaveLocationPath: String = ""
     @State private var recordingState: RecordingState = .idle
-    @State private var simulatorDevice: String = "booted"
+    @State private var simulatorDevice: SimulatorDevice?
     @State private var recordingURL: URL?
     @State private var customSaveLocation: URL?
     @State private var videoURL: URL?
@@ -47,10 +47,11 @@ struct ContentView: View {
             // Don't load any frame by default - show popup instead
             
             // Auto-detect running iOS simulator
-            let detectedDevice = recorder.getDefaultDevice()
-            if detectedDevice != "booted" {
-                simulatorDevice = detectedDevice
-                print("🔍 Auto-detected simulator device: \(detectedDevice)")
+            simulatorDevice = recorder.getDefaultDevice()
+            if let device = simulatorDevice {
+                print("🔍 Auto-detected simulator device: \(device.displayName)")
+            } else {
+                print("⚠️ No running simulators detected")
             }
             
             // Load saved custom save location
@@ -186,10 +187,34 @@ struct ContentView: View {
                     Spacer()
                 }
                 
-                LabeledControl("Device ID") {
-                    TextField("booted", text: $simulatorDevice)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                LabeledControl("Device") {
+                    HStack {
+                        if let device = simulatorDevice {
+                            Text(device.displayName)
+                                .foregroundColor(.primary)
+                                .font(.system(.body, design: .default))
+                            Spacer()
+                            Text(device.id)
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        } else {
+                            Text("No simulator running")
+                                .foregroundColor(.secondary)
+                                .font(.system(.body, design: .default))
+                            Spacer()
+                        }
+                        
+                        Button {
+                            refreshSimulatorDevices()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
                 }
                 
                 LabeledControl("Save Location") {
@@ -272,13 +297,6 @@ struct ContentView: View {
                             Spacer()
                         }
                         
-                        Button("Import to Timeline") {
-                            if let url = recordingURL {
-                                videoURL = url
-                                Task { await loadVideo(from: url) }
-                            }
-                        }
-                        .modernButton(.secondary, size: .small)
                     }
                 }
             }
@@ -645,6 +663,16 @@ struct ContentView: View {
         }
     }
     
+    // Refresh simulator device list
+    private func refreshSimulatorDevices() {
+        simulatorDevice = recorder.getDefaultDevice()
+        if let device = simulatorDevice {
+            print("🔄 Refreshed simulator devices - Found: \(device.displayName)")
+        } else {
+            print("🔄 Refreshed simulator devices - No running simulators found")
+        }
+    }
+    
     // Get save location for recordings (custom or default)
     private func getRecordingSaveURL() -> URL {
         let baseFolder: URL
@@ -670,11 +698,17 @@ struct ContentView: View {
         let url = getRecordingSaveURL()
         let locationDescription = customSaveLocation != nil ? "custom location" : "default location"
         
+        // Show the user exactly where the file will be saved
+        print("📁 Recording will be saved to \(locationDescription):")
+        print("   Full path: \(url.path)")
+        print("   Directory: \(url.deletingLastPathComponent().path)")
+        print("   Filename: \(url.lastPathComponent)")
+        
         do {
-            try recorder.startRecording(saveTo: url)
+            try recorder.startRecording(saveTo: url, device: simulatorDevice)
             recordingURL = url
             recordingState = .recording
-            print("🎬 Started recording to \(locationDescription): \(url.path)")
+            print("🎬 Recording started successfully")
         } catch {
             print("❌ Failed to start recording: \(error)")
         }
@@ -687,10 +721,41 @@ struct ContentView: View {
         
         // Auto-load the recorded video into preview
         if let url = recordingURL {
+            print("📹 Recording stopped. File should be at: \(url.path)")
+            
+            // Check if file exists and auto-load
             Task {
-                await loadVideo(from: url)
+                // Wait a moment for file to be fully written
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                
+                if FileManager.default.fileExists(atPath: url.path) {
+                    print("✅ Recording file found, loading into preview...")
+                    await loadVideo(from: url)
+                } else {
+                    print("❌ Recording file not found at: \(url.path)")
+                    
+                    // Try to find files in the directory
+                    let directory = url.deletingLastPathComponent()
+                    do {
+                        let contents = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.creationDateKey], options: [])
+                        let recentFiles = contents.filter { $0.pathExtension == "mp4" }
+                            .sorted { (url1, url2) in
+                                let date1 = try? url1.resourceValues(forKeys: [.creationDateKey]).creationDate ?? Date.distantPast
+                                let date2 = try? url2.resourceValues(forKeys: [.creationDateKey]).creationDate ?? Date.distantPast
+                                return (date1 ?? Date.distantPast) > (date2 ?? Date.distantPast)
+                            }
+                        
+                        if let mostRecent = recentFiles.first {
+                            print("🔍 Found recent recording: \(mostRecent.lastPathComponent)")
+                            await loadVideo(from: mostRecent)
+                        } else {
+                            print("🔍 No MP4 files found in directory")
+                        }
+                    } catch {
+                        print("❌ Error checking directory contents: \(error)")
+                    }
+                }
             }
-            print("📹 Recording stopped and loaded into preview")
         }
     }
 
