@@ -82,8 +82,24 @@ struct VideoFramePreview: NSViewRepresentable {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
-        // Overlay (device frame) - ensure it's on top
-        v.overlayLayer.frame = bounds
+        // Determine the rect where the device frame image is actually displayed
+        // We aspect-fit the overlay image within the available bounds and use the
+        // same fitted rect as the basis for positioning the video screen.
+        var deviceDisplayRect = bounds
+        if let img = overlayImage {
+            let imageSize = img.size
+            if imageSize.width > 0 && imageSize.height > 0 {
+                let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+                let fittedW = imageSize.width * scale
+                let fittedH = imageSize.height * scale
+                let fittedX = bounds.origin.x + (bounds.width - fittedW) / 2.0
+                let fittedY = bounds.origin.y + (bounds.height - fittedH) / 2.0
+                deviceDisplayRect = CGRect(x: fittedX, y: fittedY, width: fittedW, height: fittedH)
+            }
+        }
+
+        // Overlay (device frame) - ensure it's on top, aligned with fitted rect
+        v.overlayLayer.frame = deviceDisplayRect
         v.overlayLayer.zPosition = 100 // Ensure overlay is on top
         
         if let img = overlayImage {
@@ -102,11 +118,11 @@ struct VideoFramePreview: NSViewRepresentable {
             v.overlayLayer.isHidden = true
         }
 
-        // Compute screen rect in pixels
-        let sx = CGFloat(screen.x / 100.0) * bounds.width
-        let sy = CGFloat(screen.y / 100.0) * bounds.height
-        let sw = CGFloat(screen.w / 100.0) * bounds.width
-        let sh = CGFloat(screen.h / 100.0) * bounds.height
+        // Compute screen rect in pixels relative to the device display rect
+        let sx = deviceDisplayRect.origin.x + CGFloat(screen.x / 100.0) * deviceDisplayRect.width
+        let sy = deviceDisplayRect.origin.y + CGFloat(screen.y / 100.0) * deviceDisplayRect.height
+        let sw = CGFloat(screen.w / 100.0) * deviceDisplayRect.width
+        let sh = CGFloat(screen.h / 100.0) * deviceDisplayRect.height
         let screenRect = CGRect(x: sx, y: sy, width: sw, height: sh)
 
         v.videoContainerLayer.frame = screenRect
@@ -121,6 +137,7 @@ struct VideoFramePreview: NSViewRepresentable {
             v.playerLayer.videoGravity = .resize
         }
 
+        // Ensure the player layer fits exactly within the container bounds
         v.playerLayer.frame = v.videoContainerLayer.bounds
         v.playerLayer.masksToBounds = true
 
@@ -146,15 +163,23 @@ struct VideoFramePreview: NSViewRepresentable {
             v.playerLayer.transform = CATransform3DIdentity
         }
 
-        // Clip strictly to a rounded rectangle that matches the iPhone screen
+        // Ensure video is strictly clipped to the screen area
+        v.videoContainerLayer.masksToBounds = true
+        
+        // Create a precise clipping mask for the screen area
         let cornerRadius = min(screenRect.width, screenRect.height) * 0.12
         v.videoContainerLayer.cornerRadius = cornerRadius
+        
+        // Create a more precise mask to ensure no bleeding
         let mask = CAShapeLayer()
         mask.frame = v.videoContainerLayer.bounds
-        mask.path = CGPath(roundedRect: v.videoContainerLayer.bounds, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        let maskPath = CGPath(roundedRect: v.videoContainerLayer.bounds, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        mask.path = maskPath
+        mask.fillColor = NSColor.white.cgColor
         v.videoContainerLayer.mask = mask
-        v.videoContainerLayer.borderWidth = 0
-        v.videoContainerLayer.borderColor = NSColor.clear.cgColor
+        
+        // Also set the player layer to mask its bounds
+        v.playerLayer.masksToBounds = true
 
         v.guidesLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
 
