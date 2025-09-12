@@ -95,17 +95,6 @@ struct ContentView: View {
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                ZStack {
-                    Circle()
-                        .fill(Color.primaryBrand)
-                        .frame(width: 32, height: 32)
-                        .subtleShadow()
-                    
-                    Image(systemName: "play.rectangle.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                
                 Text("Preview")
                     .modernSectionHeader()
                 Spacer()
@@ -119,12 +108,12 @@ struct ContentView: View {
                             .frame(width: 36, height: 36)
                             .overlay(
                                 Circle()
-                                    .stroke(Color.primaryBrand.opacity(0.3), lineWidth: 1)
+                                    .stroke(Color.blue, lineWidth: 2) // Added a prominent blue border
                             )
                         
                         Image(systemName: isDarkMode ? "sun.max.fill" : "moon.fill")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Color.primary)
+                            .foregroundColor(isDarkMode ? .orangeWeb : .oxfordBlue) // Visible colors for both modes
                     }
                 }
                 .buttonStyle(.borderless)
@@ -164,6 +153,7 @@ struct ContentView: View {
             trimStart: $trimStart,
             trimEnd: $trimEnd,
             isPlaying: isPlaying,
+            isDarkMode: $isDarkMode, // Pass isDarkMode as a binding
             togglePlayPause: togglePlayPause,
             seekToTime: { t, p in seekToTime(t, pause: p) }
         )
@@ -229,9 +219,11 @@ struct ContentView: View {
                                 .font(.caption)
                                 .truncationMode(.middle)
                         } else {
-                            Text("Default Location")
+                            let defaultPath = getDefaultSaveLocation()
+                            Text("(\(defaultPath.path))")
                                 .foregroundColor(.secondary)
-                                .font(.system(.body, design: .monospaced))
+                                .font(.caption)
+                                .truncationMode(.middle)
                         }
                         
                         Spacer()
@@ -341,48 +333,20 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .overlay(
-                        // Add pulsing highlight when no frame is selected
-                        frameImage == nil ? 
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.blue, lineWidth: 3)
-                            .scaleEffect(frameImage == nil ? 1.05 : 1.0)
-                            .opacity(frameImage == nil ? 0.8 : 0.0)
-                            .animation(
-                                frameImage == nil ? 
-                                Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true) : 
-                                .default, 
-                                value: frameImage == nil
-                            )
-                        : nil
-                    )
-                    .onChange(of: framePreset) { _, new in
-                        let p = framePresets.first { $0.key == new }!
-                        screenRect = p.defaultScreen
-                        if let name = p.bundleImageName {
-                            // Try with the Frames/ prefix first
-                            if let url = Bundle.main.url(forResource: name, withExtension: "png") {
-                                frameImage = NSImage(contentsOf: url)?.trimmingTransparentPixels()
-                                Task { await autoFitVideo(); await updateStageAspect() }
-                            } else {
-                                // Try without the Frames/ prefix
-                                let nameWithoutPrefix = name.replacingOccurrences(of: "Frames/", with: "")
-                                if let url = Bundle.main.url(forResource: nameWithoutPrefix, withExtension: "png") {
-                                    frameImage = NSImage(contentsOf: url)?.trimmingTransparentPixels()
-                                    Task { await autoFitVideo(); await updateStageAspect() }
-                                } else {
-                                    print("⚠️  [ContentView] Frame image not found in app bundle!")
-                                    print("    Searched for: \(name).png and \(nameWithoutPrefix).png")
-                                    print("    Solution: Add PNG frame files to your Xcode project target:")
-                                    print("    1. In Xcode, right-click your project in the navigator")
-                                    print("    2. Choose 'Add Files to [ProjectName]'")
-                                    print("    3. Select the .png files from Demofy/Frames/")
-                                    print("    4. Make sure 'Add to target' is checked for your app target")
-                                    print("    5. Clean and rebuild the project")
-                                    frameImage = nil
-                                }
-                            }
+                    .overlay {
+                        if frameImage == nil {
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.blue, lineWidth: 3)
+                                .scaleEffect(1.05)
+                                .opacity(0.8)
+                                .animation(
+                                    Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true),
+                                    value: frameImage == nil
+                                )
                         }
+                    }
+                    .onChange(of: framePreset) { _, new in
+                        applyFramePreset(new)
                     }
                 }
 
@@ -503,6 +467,52 @@ struct ContentView: View {
         } else {
             stageAspectRatio = 9/19.5
         }
+    }
+
+    private func applyFramePreset(_ newKey: FramePresetKey) {
+        guard let p = framePresets.first(where: { $0.key == newKey }) else { return }
+        screenRect = p.defaultScreen
+        guard let name = p.bundleImageName else {
+            frameImage = nil
+            Task { await autoFitVideo(); await updateStageAspect() }
+            return
+        }
+        func loadImage(named: String) -> NSImage? {
+            if let url = Bundle.main.url(forResource: named, withExtension: "png"),
+               let img = NSImage(contentsOf: url)?.trimmingTransparentPixels() {
+                return img
+            }
+            return nil
+        }
+        let img = loadImage(named: name) ?? loadImage(named: name.replacingOccurrences(of: "Frames/", with: ""))
+        if let img {
+            frameImage = img
+            if let detected = img.screenRectFromTransparencyPercent() {
+                // Inset slightly to avoid edge bleed from anti-aliasing
+                screenRect = insetScreenRect(detected, by: 1.0)
+            }
+            Task { await autoFitVideo(); await updateStageAspect() }
+        } else {
+            print("⚠️  [ContentView] Frame image not found in app bundle!")
+            print("    Searched for: \(name).png and \(name.replacingOccurrences(of: "Frames/", with: "")).png")
+            print("    Solution: Add PNG frame files to your Xcode project target:")
+            print("    1. In Xcode, right-click your project in the navigator")
+            print("    2. Choose 'Add Files to [ProjectName]'")
+            print("    3. Select the .png files from Demofy/Frames/")
+            print("    4. Make sure 'Add to target' is checked for your app target")
+            print("    5. Clean and rebuild the project")
+            frameImage = nil
+        }
+    }
+
+    private func insetScreenRect(_ r: ScreenRect, by percent: Double) -> ScreenRect {
+        let dx = max(0, percent)
+        let dy = max(0, percent)
+        let nx = min(100, max(0, r.x + dx))
+        let ny = min(100, max(0, r.y + dy))
+        let nw = max(0, r.w - 2 * dx)
+        let nh = max(0, r.h - 2 * dy)
+        return ScreenRect(x: nx, y: ny, w: nw, h: nh)
     }
 
     @MainActor
@@ -671,6 +681,12 @@ struct ContentView: View {
         } else {
             print("🔄 Refreshed simulator devices - No running simulators found")
         }
+    }
+    
+    // Get default save location path for display
+    private func getDefaultSaveLocation() -> URL {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documentsPath.appendingPathComponent("Demofy")
     }
     
     // Get save location for recordings (custom or default)

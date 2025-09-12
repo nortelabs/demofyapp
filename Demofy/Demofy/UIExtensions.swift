@@ -67,32 +67,34 @@ struct ModernGroupBoxStyle: GroupBoxStyle {
 }
 
 extension NSImage {
+    /// Trims fully transparent borders and returns a cropped image; returns self on failure.
     func trimmingTransparentPixels() -> NSImage? {
-        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-
+        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return self }
         let width = cgImage.width
         let height = cgImage.height
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bytesPerPixel = 4
         let bytesPerRow = bytesPerPixel * width
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
-        
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: bitmapInfo),
-              let data = context.data?.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel) else {
-            return nil
-        }
-        
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else { return self }
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        
+        guard let data = context.data?.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel) else { return self }
         var top = height
         var bottom = 0
         var left = width
         var right = 0
-        
         for y in 0..<height {
             for x in 0..<width {
                 let offset = (y * width + x) * bytesPerPixel
-                if data[offset + 3] != 0 { // Check alpha channel
+                if data[offset + 3] != 0 { // any non-transparent pixel
                     if x < left { left = x }
                     if x > right { right = x }
                     if y < top { top = y }
@@ -100,15 +102,72 @@ extension NSImage {
                 }
             }
         }
-        
-        if left > right || top > bottom {
-            return nil // Image is fully transparent
-        }
-        
+        if left > right || top > bottom { return self }
         let cropRect = CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
-        guard let croppedCgImage = cgImage.cropping(to: cropRect) else { return nil }
-        
-        return NSImage(cgImage: croppedCgImage, size: cropRect.size)
+        guard let cropped = cgImage.cropping(to: cropRect) else { return self }
+        return NSImage(cgImage: cropped, size: cropRect.size)
+    }
+}
+
+extension NSImage {
+    /// Returns the bounding rectangle of fully-transparent pixels in pixel coordinates.
+    /// The rectangle is slightly inset to avoid edge bleed under the frame border.
+    func transparentAreaBoundingRect(alphaThreshold: UInt8 = 1, insetPixels: Int = 1) -> CGRect? {
+        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else { return nil }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let dataPtr = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        var minX = width
+        var minY = height
+        var maxX = 0
+        var maxY = 0
+        for y in 0..<height {
+            let rowBase = y * width * bytesPerPixel
+            for x in 0..<width {
+                let a = dataPtr[rowBase + x * bytesPerPixel + 3]
+                if a <= alphaThreshold { // transparent
+                    if x < minX { minX = x }
+                    if y < minY { minY = y }
+                    if x > maxX { maxX = x }
+                    if y > maxY { maxY = y }
+                }
+            }
+        }
+        guard minX <= maxX && minY <= maxY else { return nil }
+        // Inset by a pixel to avoid border overlap. Clamp to image bounds.
+        let ix = max(0, minX + insetPixels)
+        let iy = max(0, minY + insetPixels)
+        let ax = min(width - 1, maxX - insetPixels)
+        let ay = min(height - 1, maxY - insetPixels)
+        guard ax >= ix && ay >= iy else { return nil }
+        return CGRect(x: ix, y: iy, width: ax - ix + 1, height: ay - iy + 1)
+    }
+    
+    /// Computes a ScreenRect in percentages (0..100) representing the transparent "screen" hole.
+    func screenRectFromTransparencyPercent(alphaThreshold: UInt8 = 1, insetPixels: Int = 1) -> ScreenRect? {
+        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        guard let pxRect = transparentAreaBoundingRect(alphaThreshold: alphaThreshold, insetPixels: insetPixels) else { return nil }
+        let w = CGFloat(cgImage.width)
+        let h = CGFloat(cgImage.height)
+        let xPct = Double((pxRect.origin.x / w) * 100.0)
+        let yPct = Double((pxRect.origin.y / h) * 100.0)
+        let wPct = Double((pxRect.size.width / w) * 100.0)
+        let hPct = Double((pxRect.size.height / h) * 100.0)
+        return ScreenRect(x: xPct, y: yPct, w: wPct, h: hPct)
     }
 }
 

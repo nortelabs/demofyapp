@@ -122,6 +122,7 @@ struct VideoFramePreview: NSViewRepresentable {
         }
 
         v.playerLayer.frame = v.videoContainerLayer.bounds
+        v.playerLayer.masksToBounds = true
 
         if player != nil {
             v.playerLayer.isHidden = false
@@ -145,8 +146,13 @@ struct VideoFramePreview: NSViewRepresentable {
             v.playerLayer.transform = CATransform3DIdentity
         }
 
+        // Clip strictly to a rounded rectangle that matches the iPhone screen
         let cornerRadius = min(screenRect.width, screenRect.height) * 0.12
         v.videoContainerLayer.cornerRadius = cornerRadius
+        let mask = CAShapeLayer()
+        mask.frame = v.videoContainerLayer.bounds
+        mask.path = CGPath(roundedRect: v.videoContainerLayer.bounds, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        v.videoContainerLayer.mask = mask
         v.videoContainerLayer.borderWidth = 0
         v.videoContainerLayer.borderColor = NSColor.clear.cgColor
 

@@ -17,6 +17,7 @@ struct TimelineSectionView: View {
     @Binding var trimStart: Double
     @Binding var trimEnd: Double
     var isPlaying: Bool
+    @Binding var isDarkMode: Bool // Add isDarkMode as a binding
     var togglePlayPause: () -> Void
     var seekToTime: (_ time: Double, _ pause: Bool) -> Void
     
@@ -51,12 +52,13 @@ struct TimelineSectionView: View {
                             )
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Color.primary)
+                            .foregroundColor(isDarkMode ? .orangeWeb : .oxfordBlue) // Visible colors for both modes
                     }
                 }
                 .buttonStyle(.borderless)
                 .help(isPlaying ? "Pause Video" : "Play Video")
                 .disabled(duration <= 0)
+                .opacity(duration <= 0 ? 0.5 : 1.0) // Reduce opacity when disabled
                 .floating()
             }
             
