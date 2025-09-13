@@ -170,10 +170,11 @@ struct VideoFramePreview: NSViewRepresentable {
         let cornerRadius = min(screenRect.width, screenRect.height) * 0.12
         v.videoContainerLayer.cornerRadius = cornerRadius
         
-        // Create a more precise mask to ensure no bleeding
+        // Create a more precise mask to ensure no bleeding - minimal inset
         let mask = CAShapeLayer()
         mask.frame = v.videoContainerLayer.bounds
-        let maskPath = CGPath(roundedRect: v.videoContainerLayer.bounds, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        let insetRect = v.videoContainerLayer.bounds.insetBy(dx: 1, dy: 1)
+        let maskPath = CGPath(roundedRect: insetRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
         mask.path = maskPath
         mask.fillColor = NSColor.white.cgColor
         v.videoContainerLayer.mask = mask

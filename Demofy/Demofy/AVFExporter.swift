@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import AppKit
 import QuartzCore
+import CoreImage
 
 struct DemofyConfig: Codable {
     struct Canvas: Codable { let width: Int; let height: Int }
@@ -146,31 +147,33 @@ final class AVFExporter {
                 overlayLayer.contents = trimmed
             }
             overlayLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+
+            // Build an inverted-alpha mask from the frame image so video is visible
+            // only where the frame is transparent (i.e., inside the device screen).
+            if let cg = trimmed.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                let ciImage = CIImage(cgImage: cg)
+                if let filter = CIFilter(name: "CIColorMatrix") {
+                    filter.setValue(ciImage, forKey: kCIInputImageKey)
+                    filter.setValue(CIVector(x: 0, y: 0, z: 0, w: -1), forKey: "inputAVector")
+                    filter.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputBiasVector")
+                    let context = CIContext(options: nil)
+                    if let outImage = filter.outputImage,
+                       let maskedCG = context.createCGImage(outImage, from: outImage.extent) {
+                        let maskLayer = CALayer()
+                        maskLayer.frame = parentLayer.bounds
+                        maskLayer.contents = maskedCG
+                        maskLayer.contentsGravity = .resizeAspect
+                        maskLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+                        videoLayer.mask = maskLayer
+                        videoLayer.masksToBounds = true
+                    }
+                }
+            }
         }
 
         parentLayer.addSublayer(videoLayer)
 
-        // Precisely clip the video to the rounded screen area using a mask in
-        // bottom-left coordinate space (Core Animation default on macOS)
-        let screenBL = CGRect(
-            x: screen.origin.x,
-            y: renderSize.height - screen.origin.y - screen.height,
-            width: screen.width,
-            height: screen.height
-        )
-        let cornerRadius = min(screenBL.width, screenBL.height) * 0.12
-        let mask = CAShapeLayer()
-        mask.frame = parentLayer.bounds
-        mask.path = CGPath(
-            roundedRect: screenBL.insetBy(dx: 0.5, dy: 0.5),
-            cornerWidth: cornerRadius,
-            cornerHeight: cornerRadius,
-            transform: nil
-        )
-        mask.fillColor = NSColor.white.cgColor
-        mask.allowsEdgeAntialiasing = false
-        videoLayer.mask = mask
-        videoLayer.masksToBounds = true
+        // Using the inverted-alpha image mask above; no additional shape mask needed here.
 
         parentLayer.addSublayer(overlayLayer)
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(

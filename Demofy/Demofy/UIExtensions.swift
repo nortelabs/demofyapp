@@ -158,7 +158,7 @@ extension NSImage {
     }
     
     /// Computes a ScreenRect in percentages (0..100) representing the transparent "screen" hole.
-    func screenRectFromTransparencyPercent(alphaThreshold: UInt8 = 1, insetPixels: Int = 1) -> ScreenRect? {
+    func screenRectFromTransparencyPercent(alphaThreshold: UInt8 = 1, insetPixels: Int = 2) -> ScreenRect? {
         guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         guard let pxRect = transparentAreaBoundingRect(alphaThreshold: alphaThreshold, insetPixels: insetPixels) else { return nil }
         let w = CGFloat(cgImage.width)
