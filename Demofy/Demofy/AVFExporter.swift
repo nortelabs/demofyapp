@@ -150,12 +150,27 @@ final class AVFExporter {
 
         parentLayer.addSublayer(videoLayer)
 
-        // Avoid an additional mask; the device frame PNG already clips the video
-        // through its transparent screen area. Having a second mask here can
-        // introduce subtle coordinate mismatches and cause the video to appear
-        // cropped. Let the overlay handle the clipping.
-        videoLayer.mask = nil
-        videoLayer.masksToBounds = false
+        // Precisely clip the video to the rounded screen area using a mask in
+        // bottom-left coordinate space (Core Animation default on macOS)
+        let screenBL = CGRect(
+            x: screen.origin.x,
+            y: renderSize.height - screen.origin.y - screen.height,
+            width: screen.width,
+            height: screen.height
+        )
+        let cornerRadius = min(screenBL.width, screenBL.height) * 0.12
+        let mask = CAShapeLayer()
+        mask.frame = parentLayer.bounds
+        mask.path = CGPath(
+            roundedRect: screenBL.insetBy(dx: 0.5, dy: 0.5),
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
+        mask.fillColor = NSColor.white.cgColor
+        mask.allowsEdgeAntialiasing = false
+        videoLayer.mask = mask
+        videoLayer.masksToBounds = true
 
         parentLayer.addSublayer(overlayLayer)
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(

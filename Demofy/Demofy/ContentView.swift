@@ -806,7 +806,7 @@ struct ContentView: View {
 
         // Choose a canvas that matches the selected frame's aspect ratio to avoid letterboxing
         func makeEven(_ v: Int) -> Int { v % 2 == 0 ? v : v + 1 }
-        var canvasWidth = 1080
+        let canvasWidth = 1080
         var canvasHeight = 1920
         if let frameURL, let rawImg = NSImage(contentsOf: frameURL) {
             // Match the trimmed frame we use for preview/overlay, so screenRect percentages
