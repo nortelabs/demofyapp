@@ -22,7 +22,7 @@ struct ContentView: View {
     @State private var scale: Double = 100 // percent - 100% for proper fitting
     @State private var offsetX: Double = 0 // -100..100
     @State private var offsetY: Double = 0 // -100..100
-    @State private var videoFitMode: VideoFitMode = .fit
+    @State private var videoFitMode: VideoFitMode = .fill
 
     @State private var duration: Double = 0
     @State private var trimStart: Double = 0
@@ -787,15 +787,7 @@ struct ContentView: View {
         panel.nameFieldStringValue = "demofy-output.\(outputFormat.rawValue)"
         guard panel.runModal() == .OK, let out = panel.url else { return }
         
-        let cfg = DemofyConfig(
-            outputFormat: outputFormat.rawValue,
-            canvas: .init(width: 1080, height: 1920),
-            trim: .init(start: trimStart, end: trimEnd),
-            screenRect: screenRect,
-            scale: scale / 100.0,
-            offset: .init(x: offsetX / 100.0, y: offsetY / 100.0),
-            videoFitMode: videoFitMode
-        )
+        // Resolve frame image URL from preset, if any
         var frameURL: URL?
         if let preset = framePresets.first(where: { $0.key == framePreset }),
            let name = preset.bundleImageName {
@@ -811,6 +803,34 @@ struct ContentView: View {
                 }
             }
         }
+
+        // Choose a canvas that matches the selected frame's aspect ratio to avoid letterboxing
+        func makeEven(_ v: Int) -> Int { v % 2 == 0 ? v : v + 1 }
+        var canvasWidth = 1080
+        var canvasHeight = 1920
+        if let frameURL, let rawImg = NSImage(contentsOf: frameURL) {
+            // Match the trimmed frame we use for preview/overlay, so screenRect percentages
+            // align 1:1 with the export canvas.
+            let img = rawImg.trimmingTransparentPixels() ?? rawImg
+            let w = img.size.width
+            let h = img.size.height
+            if w > 0 && h > 0 {
+                let aspect = w / h
+                // Keep width fixed at 1080 and compute even height that matches frame aspect
+                let computedHeight = Int((CGFloat(canvasWidth) / aspect).rounded())
+                canvasHeight = makeEven(max(2, computedHeight))
+            }
+        }
+
+        let cfg = DemofyConfig(
+            outputFormat: outputFormat.rawValue,
+            canvas: .init(width: canvasWidth, height: canvasHeight),
+            trim: .init(start: trimStart, end: trimEnd),
+            screenRect: screenRect,
+            scale: scale / 100.0,
+            offset: .init(x: offsetX / 100.0, y: offsetY / 100.0),
+            videoFitMode: videoFitMode
+        )
 
         exporting = true
         exportProgressText = "Exporting…"

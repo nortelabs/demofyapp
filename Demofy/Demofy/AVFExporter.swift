@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import AppKit
+import QuartzCore
 
 struct DemofyConfig: Codable {
     struct Canvas: Codable { let width: Int; let height: Int }
@@ -87,8 +88,11 @@ final class AVFExporter {
         let oy = CGFloat(config.offset.y) * (screen.height / 2.0)
 
         // Position so video center aligns to screen center then offset
+        // AVVideoComposition transform space acts like a bottom-left origin for
+        // translation when combined with preferredTransform on macOS. Convert
+        // our top-origin screen Y to that space.
         let tx = screen.midX - scaledSize.width / 2.0 + ox
-        let ty = screen.midY - scaledSize.height / 2.0 + oy
+        let ty = (renderSize.height - screen.midY) - scaledSize.height / 2.0 - oy
 
         // Build video composition instruction
         let instruction = AVMutableVideoCompositionInstruction()
@@ -110,6 +114,9 @@ final class AVFExporter {
         
         t = t.concatenating(CGAffineTransform(translationX: tx, y: ty))
         layerInstruction.setTransform(t, at: .zero)
+        // Rely on Core Animation mask for precise clipping to rounded screen area
+        // Avoid extra cropping here to prevent coordinate-space mismatches that can
+        // introduce unintended cutoffs at the edges.
         instruction.layerInstructions = [layerInstruction]
 
         let videoComposition = AVMutableVideoComposition()
@@ -126,15 +133,30 @@ final class AVFExporter {
         parentLayer.frame = CGRect(origin: .zero, size: renderSize)
         videoLayer.frame = parentLayer.bounds
         overlayLayer.frame = parentLayer.bounds
+        // Keep default Core Animation coordinate system
+        // Ensure the frame image preserves its aspect; the canvas is sized to match it
         overlayLayer.contentsGravity = .resizeAspect
         overlayLayer.masksToBounds = false
 
         if let imgURL = frameImageURL, let nsImage = NSImage(contentsOf: imgURL) {
-            overlayLayer.contents = nsImage
+            let trimmed = nsImage.trimmingTransparentPixels() ?? nsImage
+            if let cg = trimmed.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                overlayLayer.contents = cg
+            } else {
+                overlayLayer.contents = trimmed
+            }
             overlayLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
         }
 
         parentLayer.addSublayer(videoLayer)
+
+        // Avoid an additional mask; the device frame PNG already clips the video
+        // through its transparent screen area. Having a second mask here can
+        // introduce subtle coordinate mismatches and cause the video to appear
+        // cropped. Let the overlay handle the clipping.
+        videoLayer.mask = nil
+        videoLayer.masksToBounds = false
+
         parentLayer.addSublayer(overlayLayer)
         videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
             postProcessingAsVideoLayer: videoLayer,
